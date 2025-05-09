@@ -11,7 +11,6 @@ en eventos de trivia, incluyendo:
 """
 
 from typing import Optional
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.connection import get_db
@@ -24,8 +23,9 @@ from app.schemas.participacion import (
 )
 from app.models.participacion import EstadoParticipacion
 from app.core.auth import crear_token, verificar_token
-from app.crud import crud_grupos
 
+from app.core.logger import MyLogger
+logger = MyLogger().get_logger()
 
 router = APIRouter(prefix="/participaciones", tags=["Participaciones"])
 
@@ -35,82 +35,52 @@ router = APIRouter(prefix="/participaciones", tags=["Participaciones"])
     status_code=status.HTTP_200_OK,
     summary="Gestionar participación en grupo"
 )
-async def gestionar(
+async def gestionar_participante(
     data: GestionarParticipacionRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Gestiona la participación de un usuario en un grupo.
-
-    - Si el usuario no existe, lo crea
-    - Valida que el grupo exista y esté en período válido
-    - Si no tiene participación en el grupo, la crea
-    - Si tiene participación pendiente, la retorna
-    - Si tiene participación finalizada, la retorna
-
-    Args:
-        data: Datos del participante y grupo
-        db: Sesión de base de datos
-
-    Returns:
-        ParticipacionResponse: Estado de la participación
-
-    Raises:
-        HTTPException: 500 si hay error al gestionar la participación
+    Llama a la capa de CRUD para crear, continuar o finalizar
+    una participación sin duplicar validaciones en el router.
     """
-    cedula = data.cedula
-    nombre = data.nombre
-    id_grupo = data.grupo_id
-    id_evento = data.evento_id
     try:
-        # Obtener el grupo existente
-        grupo_actual = await crud_grupos.get_grupo(db, id_grupo)
-        if not grupo_actual:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Grupo no encontrado"
-            )
-        
-        now = datetime.now(timezone.utc)
-        if not (grupo_actual.fecha_inicio <= now <= grupo_actual.fecha_cierre):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Este grupo ya está cerrado o aún no ha iniciado"
-            )
-        
-
         result = await participacion.gestionar_participacion(
-            db, nombre, cedula, id_grupo
+            db,
+            nombre=data.nombre,
+            cedula=data.cedula,
+            grupo_id=data.grupo_id
         )
-        
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al gestionar la participación"
-            )
-        
-        # Crear token JWT con los datos de la sesión
-        token = crear_token({
-            "cedula": cedula,
-            "nombre": nombre,
-            "id_grupo": id_grupo,
-            "id_evento": id_evento,
-            "id_participacion": result["id_participacion"]
-        })
-        
-        return ParticipacionResponse(
-            token=token,
-            action=result["action"],
-            id_participacion=result["id_participacion"],
-            respuestas=result["respuestas"],
-            started_at=result["started_at"],
-            tiempo_total=result.get("tiempo_total")
-        )
+    except HTTPException:
+        # Simplemente relanzamos la excepción original
+        raise
     except Exception as e:
+        # Aquí sí capturamos todo lo demás
+        logger.exception(
+            "Error inesperado al gestionar participación (grupo=%s)",
+            data.grupo_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Error interno al gestionar la participación"
         ) from e
+
+    token = crear_token({
+        "cedula": data.cedula,
+        "nombre": data.nombre,
+        "id_grupo": data.grupo_id,
+        "id_evento": data.evento_id,
+        "id_participacion": result["id_participacion"]
+    })
+
+    return ParticipacionResponse(
+        token            = token,
+        action           = result["action"],
+        id_participacion = result["id_participacion"],
+        numero_intento   = result["numero_intento"],
+        respuestas       = result["respuestas"],
+        started_at       = result["started_at"],
+        tiempo_total     = result.get("tiempo_total")
+    )
 
 @router.put(
     "/finalizar",

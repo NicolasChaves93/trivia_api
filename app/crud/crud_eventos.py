@@ -61,5 +61,16 @@ async def create_evento(db: AsyncSession, nombre_evento: str, tipo_login: TipoLo
         raise IntegrityError(f"Conflicto al guardar el evento: {nombre_evento}", e.params, e.orig) from e
 
 async def delete_evento(db: AsyncSession, evento: Evento):
+    """
+    Elimina una instancia de Evento de la base de datos.
+
+    Args:
+        db (AsyncSession): Sesión de base de datos asíncrona.
+        evento (Evento): Objeto Evento a eliminar.
+
+    Returns:
+        None
+    """
     await db.delete(evento)
     await db.commit()
+    logger.info("Evento eliminado: id=%s", evento.id_evento)

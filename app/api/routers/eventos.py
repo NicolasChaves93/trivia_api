@@ -20,6 +20,9 @@ from app.schemas.evento import EventoCreate, EventoOut
 from app.core.logger import MyLogger
 logger = MyLogger().get_logger()
 
+EVENTO_NO_ENCONTRADO = "Evento no encontrado"
+EVENTO_DUPLICADO    = "Ya existe un evento con ese nombre."
+
 router = APIRouter(prefix="/eventos", tags=["Eventos"])
 """
 Router de FastAPI para operaciones relacionadas con eventos.
@@ -56,15 +59,10 @@ async def obtener_evento(evento_id: int, db: AsyncSession = Depends(get_db)):
     if not evento:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Evento no encontrado"
+            detail=EVENTO_NO_ENCONTRADO
         )
     return evento
 
-@router.post("/", 
-             response_model=EventoOut,
-             summary="Crear un nuevo evento",
-             status_code=status.HTTP_201_CREATED
-            )
 @router.post("/", response_model=EventoOut, status_code=status.HTTP_201_CREATED, summary="Crear un nuevo evento")
 async def crear_evento(
     evento_in: EventoCreate,
@@ -94,7 +92,7 @@ async def crear_evento(
     if existente:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ya existe un evento con ese nombre."
+            detail=EVENTO_DUPLICADO
         )
 
     try:
@@ -119,23 +117,23 @@ async def crear_evento(
             detail="Error interno al crear el evento."
         ) from e
 
-@router.delete("/{id_evento}", summary="Eliminar un evento", status_code=status.HTTP_204_NO_CONTENT)
-async def eliminar_evento(id_evento: int, db: AsyncSession = Depends(get_db)):
+@router.delete("/{evento_id}", summary="Eliminar un evento", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_evento(evento_id: int, db: AsyncSession = Depends(get_db)):
     """
     Elimina un evento por su ID.
 
     Args:
-        id_evento (int): Identificador del evento.
+        evento_id (int): Identificador del evento.
         db (AsyncSession): Sesión de base de datos.
 
     Raises:
         HTTPException: 404 si el evento no existe.
     """
-    evento = await crud_eventos.get_by_id(db, id_evento)
+    evento = await crud_eventos.get_by_id(db, evento_id)
     if not evento:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Evento no encontrado"
+            detail=EVENTO_NO_ENCONTRADO
         )
     
     await crud_eventos.delete_evento(db, evento)
