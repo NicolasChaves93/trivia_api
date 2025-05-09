@@ -5,12 +5,12 @@ Este módulo contiene las funciones para crear, leer, actualizar y eliminar grup
 en la base de datos usando SQLAlchemy de manera asíncrona.
 """
 from datetime import datetime, timezone
+from typing import Optional
 from sqlalchemy import between
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 from app.models.grupo import Grupo
-from typing import Optional
 
 
 def ensure_utc(dt: datetime) -> datetime:
@@ -49,7 +49,7 @@ async def get_grupos_by_evento(db: AsyncSession, id_evento: int):
     result = await db.execute(stmt)
     return result.scalars().all()
 
-async def get_grupo(db: AsyncSession, id_grupo: int):
+async def get_grupo_by_id(db: AsyncSession, id_grupo: int) -> Optional[Grupo]:
     """
     Obtiene un grupo por su ID.
 

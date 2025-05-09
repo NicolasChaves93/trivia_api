@@ -51,10 +51,8 @@ async def gestionar_participante(
             grupo_id=data.grupo_id
         )
     except HTTPException:
-        # Simplemente relanzamos la excepción original
         raise
     except Exception as e:
-        # Aquí sí capturamos todo lo demás
         logger.exception(
             "Error inesperado al gestionar participación (grupo=%s)",
             data.grupo_id
@@ -65,21 +63,22 @@ async def gestionar_participante(
         ) from e
 
     token = crear_token({
-        "cedula": data.cedula,
-        "nombre": data.nombre,
-        "id_grupo": data.grupo_id,
-        "id_evento": data.evento_id,
-        "id_participacion": result["id_participacion"]
+        "cedula":            data.cedula,
+        "nombre":            data.nombre,
+        "id_grupo":          data.grupo_id,
+        "id_evento":         data.evento_id,
+        "id_participacion":  result["id_participacion"]
     })
 
     return ParticipacionResponse(
-        token            = token,
-        action           = result["action"],
-        id_participacion = result["id_participacion"],
-        numero_intento   = result["numero_intento"],
-        respuestas       = result["respuestas"],
-        started_at       = result["started_at"],
-        tiempo_total     = result.get("tiempo_total")
+        token             = token,
+        action            = result["action"],
+        id_participacion  = result["id_participacion"],
+        numero_intento    = result["numero_intento"],
+        respuestas        = result["respuestas"],
+        started_at        = result["started_at"],
+        tiempo_total      = result.get("tiempo_total"),
+        remaining         = result["remaining"]
     )
 
 @router.put(

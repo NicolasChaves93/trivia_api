@@ -99,7 +99,7 @@ class ParticipacionResponse(BaseModel):
     Esquema de salida para las operaciones de participación.
     
     Attributes:
-        action (str): Acción realizada ("iniciar", "continuar" o "finalizado")
+        action (str): Acción realizada ("iniciar", "continuar", "esperar" o "finalizado")
         id_participacion (int): ID de la participación
         respuestas (List[Dict]): Lista de respuestas del usuario
         started_at (datetime): Timestamp de inicio
@@ -111,7 +111,16 @@ class ParticipacionResponse(BaseModel):
     numero_intento  : int
     respuestas      : List[Dict[str, Any]]
     started_at      : datetime
-    tiempo_total    : Optional[str]
+    finished_at     : Optional[datetime] = None
+    tiempo_total    : Optional[str]     = None
+    remaining       : str
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            datetime: lambda v: v.isoformat()
+        }
+    )
 
 class UsuarioInfo(BaseModel):
     """

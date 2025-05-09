@@ -23,6 +23,7 @@ from sqlalchemy.orm import joinedload
 from app.models.participacion import Participacion, EstadoParticipacion
 from app.models.usuario import Usuario
 from app.models.grupo import Grupo
+from app.crud.crud_grupos import get_grupo_by_id
 
 from app.core.logger import MyLogger
 logger = MyLogger().get_logger()
@@ -35,20 +36,19 @@ async def gestionar_participacion(
     grupo_id: int
 ) -> Dict[str, Any]:
     """
-    Gestiona la participación de un usuario en un grupo, validando existencia
-    y periodo de validez del grupo, e invocando la función PL/pgSQL que
-    controla número de intentos.
+    Gestiona la participación de un usuario en un grupo:
+    - Valida existencia y vigencia del grupo
+    - Llama a la función PL/pgSQL que controla intentos y cooldown
+    - Lee el campo `remaining` devuelto para el tiempo restante
     """
-    # 1. Validar que el grupo exista
-    stmt = select(Grupo).where(Grupo.id_grupo == grupo_id)
-    grupo = (await db.execute(stmt)).scalar_one_or_none()
+    # 1. Validar que el grupo exista y esté activo
+    grupo = await  get_grupo_by_id(db, grupo_id)
     if not grupo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Grupo no encontrado"
         )
 
-    # 2. Validar que estemos dentro del período activo
     now = datetime.now(timezone.utc)
     if not (grupo.fecha_inicio <= now <= grupo.fecha_cierre):
         raise HTTPException(
@@ -59,7 +59,7 @@ async def gestionar_participacion(
     try:
         # 3. Invocar la función almacenada
         func = text("""
-            SELECT action, id_part, respuestas, started_at, finished_at, tiempo_tot
+            SELECT action, id_part, respuestas, started_at, finished_at, tiempo_tot, remaining
             FROM trivia.gestionar_participacion(:nombre, :cedula, :grupo_id)
         """).bindparams(nombre=nombre, cedula=cedula, grupo_id=grupo_id)
         result = await db.execute(func)
@@ -71,51 +71,32 @@ async def gestionar_participacion(
                 detail="No se pudo iniciar o recuperar la participación"
             )
 
-        # 4. Recuperar número de intento
-        intento = await db.execute(
+        # 3. Obtener número de intento
+        intento_res = await db.execute(
             text("""
                 SELECT numero_intento
                 FROM trivia.participaciones
                 WHERE id_participacion = :id_part
             """).bindparams(id_part=row.id_part)
         )
-        numero_intento = intento.scalar_one_or_none() or 1
+        numero_intento = intento_res.scalar_one_or_none() or 1
 
+        # 4. Commit y retornar
         await db.commit()
 
         return {
-            "action":         row.action,
-            "id_participacion": row.id_part,
-            "numero_intento": numero_intento,
-            "respuestas":     row.respuestas or [],
-            "started_at":     row.started_at,
-            "finished_at":    row.finished_at,
-            "tiempo_total":   str(row.tiempo_tot) if row.tiempo_tot else None
+            "action":            row.action,
+            "id_participacion":  row.id_part,
+            "numero_intento":    numero_intento,
+            "respuestas":        row.respuestas or [],
+            "started_at":        row.started_at,
+            "finished_at":       row.finished_at,
+            "tiempo_total":      str(row.tiempo_tot) if row.tiempo_tot else None,
+            "remaining":         str(row.remaining)
         }
-
     except HTTPException:
         await db.rollback()
         raise
-
-    except SQLAlchemyError as e:
-        await db.rollback()
-
-        # 1️⃣ Intentamos sacar la causa original
-        orig = getattr(e, "__cause__", None) or getattr(e, "orig", None)
-        extraido = str(orig) if orig is not None else str(e)
-
-        # 2️⃣ Partimos por ": " y nos quedamos con lo que viene después
-        parts = extraido.split(": ", 1)
-        clean_msg = parts[1] if len(parts) == 2 else parts[0]
-
-        # 3️⃣ Log completo para debug
-        logger.exception("Error en gestionar_participacion: %s", extraido)
-
-        # 4️⃣ Lanzamos HTTPException con mensaje limpio
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=clean_msg
-        ) from e
 
 async def finalizar_participacion(
     db: AsyncSession,

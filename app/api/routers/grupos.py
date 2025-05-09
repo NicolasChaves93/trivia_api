@@ -54,7 +54,7 @@ async def listar_grupos_activos(
 @router.get("/{grupo_id}", response_model=GrupoOut)
 async def obtener_grupo(grupo_id: int, db: AsyncSession = Depends(get_db)):
     """Retorna la información de un grupo específico."""
-    grupo = await crud_grupos.get_grupo(db, grupo_id)
+    grupo = await crud_grupos.get_grupo_by_id(db, grupo_id)
     if not grupo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=GRUPO_NO_ENCONTRADO)
     return grupo
@@ -105,7 +105,7 @@ async def actualizar_grupo_endpoint(
 @router.delete("/{grupo_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def eliminar_grupo(grupo_id: int, db: AsyncSession = Depends(get_db)):
     """Elimina un grupo por su ID."""
-    grupo = await crud_grupos.get_grupo(db, grupo_id)
+    grupo = await crud_grupos.get_grupo_by_id(db, grupo_id)
     if not grupo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=GRUPO_NO_ENCONTRADO)
     await crud_grupos.delete_grupo(db, grupo)
