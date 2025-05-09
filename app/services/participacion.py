@@ -9,73 +9,94 @@ Este módulo contiene la lógica de negocio para:
 - Consultar participaciones por usuario y/o evento
 - Listar todas las participaciones
 """
+
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List
+from asyncpg import PostgresError
+import asyncpg
 from fastapi import HTTPException, status
-from sqlalchemy import update, select
+from sqlalchemy import update, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 
 from app.models.participacion import Participacion, EstadoParticipacion
 from app.models.usuario import Usuario
 from app.models.grupo import Grupo
+from app.crud.crud_grupos import get_grupo_by_id
+
+from app.core.logger import MyLogger
+logger = MyLogger().get_logger()
 
 
 async def gestionar_participacion(
-    db: AsyncSession, 
-    nombre: str, 
-    cedula: str, 
+    db: AsyncSession,
+    nombre: str,
+    cedula: str,
     grupo_id: int
-) -> Optional[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
-    Gestiona la participación de un usuario en un grupo.
-
-    Llama a la función de base de datos 'gestionar_participacion' que:
-    1. Crea o actualiza el usuario
-    2. Valida que el grupo exista y esté en período válido
-    3. Obtiene o crea la participación
-
-    Args:
-        db: Sesión de base de datos
-        nombre: Nombre del participante
-        cedula: Número de cédula
-        grupo_id: ID del grupo en el que participa
-
-    Returns:
-        Dict con los datos de la participación o None si hay error:
-        - action: "iniciar", "continuar" o "finalizado"
-        - id_participacion: ID de la participación
-        - respuestas: Lista de respuestas del usuario
-        - started_at: Timestamp de inicio
-        - tiempo_total: Tiempo transcurrido (si aplica)
-
-    Raises:
-        SQLAlchemyError: Si hay error de base de datos
-        ValueError: Si los datos retornados son inválidos
+    Gestiona la participación de un usuario en un grupo:
+    - Valida existencia y vigencia del grupo
+    - Llama a la función PL/pgSQL que controla intentos y cooldown
+    - Lee el campo `remaining` devuelto para el tiempo restante
     """
-    try:
-        result = await db.execute(
-            text("SELECT * FROM trivia.gestionar_participacion(:nombre, :cedula, :grupo_id)"),
-            {"nombre": nombre, "cedula": cedula, "grupo_id": grupo_id}
+    # 1. Validar que el grupo exista y esté activo
+    grupo = await  get_grupo_by_id(db, grupo_id)
+    if not grupo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Grupo no encontrado"
         )
+
+    now = datetime.now(timezone.utc)
+    if not (grupo.fecha_inicio <= now <= grupo.fecha_cierre):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El grupo está cerrado o aún no ha iniciado"
+        )
+
+    try:
+        # 3. Invocar la función almacenada
+        func = text("""
+            SELECT action, id_part, respuestas, started_at, finished_at, tiempo_tot, remaining
+            FROM trivia.gestionar_participacion(:nombre, :cedula, :grupo_id)
+        """).bindparams(nombre=nombre, cedula=cedula, grupo_id=grupo_id)
+        result = await db.execute(func)
         row = result.fetchone()
-        if row and row[1] is not None:  # Verificar que id_participacion no sea null
-            # Confirmar la transacción explícitamente
-            await db.commit()
-            return {
-                "action": row[0],
-                "id_participacion": row[1],
-                "respuestas": row[2] or [],  # Asegurar lista vacía si es NULL
-                "started_at": row[3],
-                "tiempo_total": str(row[4]) if row[4] else None
-            }
+
+        if not row or row.id_part is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No se pudo iniciar o recuperar la participación"
+            )
+
+        # 3. Obtener número de intento
+        intento_res = await db.execute(
+            text("""
+                SELECT numero_intento
+                FROM trivia.participaciones
+                WHERE id_participacion = :id_part
+            """).bindparams(id_part=row.id_part)
+        )
+        numero_intento = intento_res.scalar_one_or_none() or 1
+
+        # 4. Commit y retornar
+        await db.commit()
+
+        return {
+            "action":            row.action,
+            "id_participacion":  row.id_part,
+            "numero_intento":    numero_intento,
+            "respuestas":        row.respuestas or [],
+            "started_at":        row.started_at,
+            "finished_at":       row.finished_at,
+            "tiempo_total":      str(row.tiempo_tot) if row.tiempo_tot else None,
+            "remaining":         str(row.remaining)
+        }
+    except HTTPException:
         await db.rollback()
-        raise ValueError("Error: la participación no pudo ser creada o recuperada correctamente")
-    except SQLAlchemyError as e:
-        await db.rollback()
-        raise SQLAlchemyError(f"Error al gestionar participación: {str(e)}") from e
+        raise
 
 async def finalizar_participacion(
     db: AsyncSession,

@@ -99,18 +99,28 @@ class ParticipacionResponse(BaseModel):
     Esquema de salida para las operaciones de participación.
     
     Attributes:
-        action (str): Acción realizada ("iniciar", "continuar" o "finalizado")
+        action (str): Acción realizada ("iniciar", "continuar", "esperar" o "finalizado")
         id_participacion (int): ID de la participación
         respuestas (List[Dict]): Lista de respuestas del usuario
         started_at (datetime): Timestamp de inicio
         tiempo_total (Optional[str]): Tiempo total transcurrido
     """
-    token: str
-    action: str
+    token           : str
+    action          : str
     id_participacion: int
-    respuestas: List[Dict[str, Any]]
-    started_at: datetime
-    tiempo_total: Optional[str]
+    numero_intento  : int
+    respuestas      : List[Dict[str, Any]]
+    started_at      : datetime
+    finished_at     : Optional[datetime] = None
+    tiempo_total    : Optional[str]     = None
+    remaining       : str
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            datetime: lambda v: v.isoformat()
+        }
+    )
 
 class UsuarioInfo(BaseModel):
     """
@@ -130,18 +140,10 @@ class UsuarioInfo(BaseModel):
 class ParticipacionOut(BaseModel):
     """
     Esquema de salida básico para una participación.
-    
-    Attributes:
-        id_participacion (int): ID único de la participación
-        id_grupo (int): ID del grupo al que pertenece la participación
-        estado (str): Estado actual de la participación
-        started_at (datetime): Fecha y hora de inicio
-        finished_at (Optional[datetime]): Fecha y hora de finalización
-        tiempo_total (Optional[str]): Tiempo total de la participación
-        usuario (UsuarioInfo): Información del usuario que participa
     """
     id_participacion: int
     id_grupo: int
+    numero_intento: int
     estado: str
     started_at: datetime
     finished_at: Optional[datetime] = None
@@ -155,11 +157,7 @@ class ParticipacionOut(BaseModel):
         if v is None:
             return None
         if isinstance(v, timedelta):
-            total_seconds = int(v.total_seconds())
-            hours = total_seconds // 3600
-            minutes = (total_seconds % 3600) // 60
-            seconds = total_seconds % 60
-            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            return f"{int(v.total_seconds() // 3600):02d}:{int((v.total_seconds() % 3600) // 60):02d}:{int(v.total_seconds() % 60):02d}"
         return v
 
     model_config = ConfigDict(from_attributes=True)
