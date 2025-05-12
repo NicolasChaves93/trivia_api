@@ -1,5 +1,10 @@
 from datetime import timedelta
-from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, SmallInteger, CheckConstraint, UniqueConstraint, Interval
+from sqlalchemy import (
+    Column, Integer, String, ForeignKey, TIMESTAMP,
+    SmallInteger, Interval
+)
+from sqlalchemy import (CheckConstraint, UniqueConstraint)
+from sqlalchemy.orm import relationship
 from app.db.connection import Base
 
 class Grupo(Base):
@@ -12,11 +17,26 @@ class Grupo(Base):
         {"schema": "trivia"}
     )
 
-    id_grupo = Column(Integer, primary_key=True, index=True)
-    id_evento = Column(Integer, ForeignKey("trivia.eventos.id_evento", ondelete="CASCADE"), nullable=False)
+    id_grupo     = Column(Integer, primary_key=True, index=True)
+    id_evento    = Column(
+        Integer,
+        ForeignKey("trivia.eventos.id_evento", ondelete="CASCADE"),
+        nullable=False
+    )
     nombre_grupo = Column(String(255), nullable=False)
     fecha_inicio = Column(TIMESTAMP(timezone=True), nullable=False)
     fecha_cierre = Column(TIMESTAMP(timezone=True), nullable=False)
     max_intentos = Column(SmallInteger, nullable=False, default=1)
-    cooldown = Column(Interval, nullable=False, default=timedelta(minutes=5),
-                      doc="Tiempo mínimo de espera entre intentos (Interval)")
+    cooldown = Column(
+        Interval,
+        nullable=False,
+        default=timedelta(minutes=5),
+        doc="Tiempo mínimo de espera entre intentos (Interval)"
+    )      
+    # Relaciones
+    participaciones = relationship(
+        "Participacion",
+        back_populates="grupo",
+        cascade="all, delete-orphan",
+        passive_deletes=True
+    )
