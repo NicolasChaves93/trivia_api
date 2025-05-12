@@ -1,7 +1,11 @@
 """
 Modelo de datos para los usuarios en el sistema de trivia.
 
-Cada usuario está identificado de forma única por su `cedula` y puede tener múltiples participaciones.
+Cada usuario está identificado de forma única por su `cedula` 
+y puede tener múltiples participaciones.
+
+Al eliminar un usuario, sus participaciones también se eliminan 
+automáticamente gracias al ondelete="CASCADE".
 """
 
 from sqlalchemy import Column, Integer, String, UniqueConstraint
@@ -19,8 +23,10 @@ class Usuario(Base):
 
     Relaciones:
         participaciones (List[Participacion]): Lista de participaciones asociadas.
+            Al eliminar el usuario, se eliminan automáticamente las participaciones 
+            (ON DELETE CASCADE).
+            Eliminar una participación no afecta al usuario.
     """
-
     __tablename__ = "usuarios"
     __table_args__ = (
         UniqueConstraint("cedula", name="uq_usuario_cedula"),
@@ -48,6 +54,7 @@ class Usuario(Base):
         doc="Nombre completo del usuario"
     )
 
+    # Relaciones
     participaciones = relationship(
         "Participacion",
         back_populates="usuario",

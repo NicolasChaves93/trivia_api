@@ -48,6 +48,12 @@ class Resultado(Base):
         doc="Cantidad de respuestas correctas"
     )
 
+    respuestas_incorrectas = Column(
+        Integer,
+        nullable=False,
+        doc="Cantidad de respuestas incorrectas"
+    )
+
     porcentaje_acierto = Column(
         Numeric(5, 2),
         nullable=False,

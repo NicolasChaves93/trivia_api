@@ -22,18 +22,20 @@ BEGIN
             id_participacion,
             total_preguntas,
             respuestas_correctas,
+            respuestas_incorrectas,
             porcentaje_acierto,
             tiempo_total
         )
         SELECT 
             NEW.id_participacion,
             COUNT(*) AS total_preguntas,
-            SUM(CASE WHEN c.respuesta_seleccionada = p.opcion_correcta THEN 1 ELSE 0 END),
+            SUM(CASE WHEN c.respuesta_seleccionada = p.opcion_correcta THEN 1 ELSE 0 END) AS respuestas_correctas,
+            COUNT(*) - SUM(CASE WHEN c.respuesta_seleccionada = p.opcion_correcta THEN 1 ELSE 0 END) AS respuestas_incorrectas,
             ROUND(
                 100.0 * SUM(CASE WHEN c.respuesta_seleccionada = p.opcion_correcta THEN 1 ELSE 0 END)
                 / NULLIF(COUNT(*), 0),
                 2
-            ),
+            ) AS porcentaje_acierto,
             NEW.tiempo_total
         FROM cte c
         JOIN trivia.preguntas p ON p.id_pregunta = c.id_pregunta
@@ -41,6 +43,7 @@ BEGIN
         SET 
             total_preguntas = EXCLUDED.total_preguntas,
             respuestas_correctas = EXCLUDED.respuestas_correctas,
+            respuestas_incorrectas = EXCLUDED.respuestas_incorrectas,
             porcentaje_acierto = EXCLUDED.porcentaje_acierto,
             tiempo_total = EXCLUDED.tiempo_total;
     END IF;
