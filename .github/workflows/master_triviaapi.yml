@@ -1,43 +1,48 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-# More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
-
 name: Build and deploy Python app to Azure Web App - TriviaAPI
 
 on:
+  # Solo se activa automáticamente si haces push a un tag
   push:
-    branches:
-      - master
+    tags:
+      - 'v*'
+      - 'rollback-*'
+
+  # Permitir ejecución manual desde GitHub Actions
   workflow_dispatch:
+    inputs:
+      ref_to_deploy:
+        description: 'Nombre de la rama o tag a desplegar (ej: master, release/v1.0.0, rollback-v1.0.1)'
+        required: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout del código desde tag o rama
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref_to_deploy || github.ref }}
 
-      - name: Set up Python version
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      - name: Create and start virtual environment
+      - name: Crear y activar entorno virtual
         run: |
           python -m venv venv
           source venv/bin/activate
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-        
-      # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
 
-      - name: Zip artifact for deployment
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Comprimir artefacto para despliegue
         run: zip release.zip ./* -r
 
-      - name: Upload artifact for deployment jobs
+      - name: Subir artefacto
         uses: actions/upload-artifact@v4
         with:
           name: python-app
@@ -52,30 +57,28 @@ jobs:
       name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download artifact from build job
+      - name: Descargar artefacto
         uses: actions/download-artifact@v4
         with:
           name: python-app
 
-      - name: Unzip artifact for deployment
+      - name: Descomprimir artefacto
         run: unzip release.zip
 
-      
-      - name: Login to Azure
+      - name: Login en Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_7C2A4F5F47CE4FF484F9F9EDC176F995 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E97780AF6AF34E02AFE37FC104AFA7C5 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_385A573DD35449EDAFC949420786C4A3 }}
 
-      - name: 'Deploy to Azure Web App'
+      - name: Desplegar a Azure Web App
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
           app-name: 'TriviaAPI'
           slot-name: 'Production'
-          
