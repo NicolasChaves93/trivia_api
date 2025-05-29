@@ -11,11 +11,17 @@ Methods:
 """
 
 from contextlib import asynccontextmanager
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+
 from app.db.init_db import init
 from app.api.routers import api_router
+from app.core.logger import MyLogger
+
+# Configurar el logger al inicio de la aplicación
+logger = MyLogger().get_logger(name="main")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -25,9 +31,11 @@ async def lifespan(_: FastAPI):
     This function runs automatically on app startup and shutdown.
     It's useful for initializing connections, loading configs, etc.
     """
-    await init()  # Initializes database or other services
+    logger.info("Inicializando aplicación...")
+    await init()
+    logger.info("Base de datos inicializada correctamente")
     yield
-    # You can optionally clean up resources here
+    logger.info("Cerrando aplicación...")
 
 # Create FastAPI instance with custom lifespan
 app = FastAPI(
@@ -76,5 +84,5 @@ app.openapi = custom_openapi
 app.include_router(api_router)
 
 if __name__ == "__main__":
-    import uvicorn
+    logger.info("Iniciando servidor...")
     uvicorn.run(app, host='0.0.0.0', port=8000, access_log=True)

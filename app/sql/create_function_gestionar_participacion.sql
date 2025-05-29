@@ -54,7 +54,7 @@ BEGIN
             respuestas_usuario, estado, started_at, tiempo_total
         ) VALUES (
             v_user, p_grupo, v_intento,
-            '[]'::jsonb, 'pendiente', NOW(), NULL
+            '[]'::jsonb, 'PENDIENTE', NOW(), NULL
         ) RETURNING id_participacion INTO v_part;
 
         action      := 'iniciar';
@@ -75,7 +75,7 @@ BEGIN
          WHERE p2.id_usuario     = v_user
            AND p2.id_grupo       = p_grupo
            AND p2.numero_intento = v_intento
-           AND p2.estado         = 'pendiente'
+           AND p2.estado         = 'PENDIENTE'
     ) THEN
         SELECT p3.id_participacion,
                p3.respuestas_usuario,
@@ -140,7 +140,7 @@ BEGIN
            AND p5.id_grupo       = p_grupo
            AND p5.numero_intento = v_intento;
 
-        action      := 'finalizado';
+        action      := 'FINALIZADO';
         id_part     := v_part;
         respuestas  := v_respuestas;
         started_at  := v_start_ts;
@@ -157,7 +157,7 @@ BEGIN
         respuestas_usuario, estado, started_at, tiempo_total
     ) VALUES (
         v_user, p_grupo, v_intento,
-        '[]'::jsonb, 'pendiente', NOW(), NULL
+        '[]'::jsonb, 'PENDIENTE', NOW(), NULL
     ) RETURNING id_participacion INTO v_part;
 
     action      := 'iniciar';

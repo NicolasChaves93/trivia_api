@@ -13,7 +13,10 @@ Este modelo incluye:
 import enum
 from sqlalchemy import Column, Integer, String
 from sqlalchemy import Enum as PgEnum
+
 from app.db.connection import Base
+from app.core.settings_instance import settings
+
 
 class TipoEvento(str, enum.Enum):
     """
@@ -39,7 +42,7 @@ class Evento(Base):
     """
 
     __tablename__ = "eventos"
-    __table_args__ = {"schema": "trivia"}
+    __table_args__ = {"schema": settings.postgres_db_schema}
 
     id_evento = Column(
         Integer,
@@ -56,7 +59,7 @@ class Evento(Base):
     )
 
     tipo_evento = Column(
-        PgEnum(TipoEvento, name="tipo_login", schema="trivia"),
+        PgEnum(TipoEvento, name="tipo_evento", schema=settings.postgres_db_schema),
         nullable=False,
         default=TipoEvento.TRIVIA_GENERAL,
         doc="Tipo de evento"
