@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, SmallInteger, ForeignKey, Text, UniqueCo
 from sqlalchemy.orm import relationship, Mapped
 from app.db.connection import Base
 from app.models.respuesta import Respuesta
+from app.models.seccion import Seccion
 from typing import List
 
 class Pregunta(Base):
@@ -14,7 +15,8 @@ class Pregunta(Base):
     id_pregunta = Column(Integer, primary_key=True, index=True)
     id_seccion = Column(Integer, ForeignKey("trivia.secciones.id_seccion", ondelete="CASCADE"), nullable=False)
     pregunta = Column(Text, nullable=False)
-    opcion_correcta = Column(SmallInteger)
+    tipo_pregunta = Column(Text, nullable=False)  # 'abierta' o 'opcion_unica'
+    opcion_correcta = Column(SmallInteger, nullable=True)
 
     # Relaciones
     respuestas: Mapped[List[Respuesta]] = relationship(
