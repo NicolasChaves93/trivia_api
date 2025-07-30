@@ -50,13 +50,16 @@ class RespuestaUsuario(BaseModel):
         respuesta_seleccionada (int): Número de la opción seleccionada (1-4)
     """
     id_pregunta: int = Field(..., gt=0)
-    respuesta_seleccionada: int = Field(..., ge=1, le=4)
+    tipo_pregunta: str = Field(..., description="Tipo de pregunta: 'abierta' o 'opcion_unica'")
+    respuesta_seleccionada: Optional[int] = Field(None, ge=1, le=4, description="Número de la opción seleccionada (solo para opción única)")
+    respuesta_abierta: Optional[str] = Field(None, description="Texto de la respuesta abierta (solo para preguntas abiertas)")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "id_pregunta": 1,
-                "respuesta_seleccionada": 1
+                "tipo_pregunta": "opcion_unica",
+                "respuesta_seleccionada": 2
             }
         }
     )
@@ -87,7 +90,16 @@ class FinalizarParticipacionRequest(BaseModel):
             "example": {
                 "id_participacion": 1,
                 "respuestas": [
-                    {"id_pregunta": 1, "respuesta_seleccionada": 1}
+                    {
+                        "id_pregunta": 1,
+                        "tipo_pregunta": "abierta",
+                        "respuesta_abierta": "Texto de la respuesta abierta"
+                    },
+                    {
+                        "id_pregunta": 2,
+                        "tipo_pregunta": "opcion_unica",
+                        "respuesta_seleccionada": 3
+                    }
                 ],
                 "tiempo": "00:05:30"
             }

@@ -12,13 +12,15 @@ Incluye operaciones CRUD:
 Las respuestas están documentadas automáticamente en Swagger (/docs).
 """
 
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 from app.db.connection import get_db
-from app.crud import crud_preguntas, crud_secciones, crud_eventos
+from app.crud import crud_preguntas
+from app.crud import crud_secciones
+from app.crud import crud_eventos
 from app.schemas.pregunta import PreguntaCreate, PreguntaOut, RespuestaCreate
 from app.core.auth import verificar_token
 
@@ -154,14 +156,23 @@ async def crear_pregunta(pregunta: PreguntaCreate, db: AsyncSession = Depends(ge
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Sección no encontrada"
         )
-    
+
+    # Validación adicional por tipo de pregunta
+    if pregunta.tipo_pregunta == "abierta":
+        respuestas = None
+        opcion_correcta = None
+    else:
+        respuestas = pregunta.respuestas
+        opcion_correcta = pregunta.opcion_correcta
+
     try:
         return await crud_preguntas.create_pregunta(
             db,
             pregunta.id_seccion,
             pregunta.pregunta,
-            pregunta.respuestas,
-            pregunta.opcion_correcta
+            pregunta.tipo_pregunta,
+            respuestas,
+            opcion_correcta
         )
     except IntegrityError as exc:
         raise HTTPException(
@@ -172,9 +183,9 @@ async def crear_pregunta(pregunta: PreguntaCreate, db: AsyncSession = Depends(ge
 @router.put("/{pregunta_id}", response_model=PreguntaOut)
 async def actualizar_pregunta(
     pregunta_id: int,
-    pregunta: str = None,
-    opcion_correcta: int = None,
-    respuestas: List[RespuestaCreate] = None,
+    pregunta: Optional[str] = None,
+    opcion_correcta: Optional[int] = None,
+    respuestas: Optional[List[RespuestaCreate]] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -203,7 +214,7 @@ async def actualizar_pregunta(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=PREGUNTA_NO_ENCONTRADA
         )
-    
+
     # Validar y actualizar el texto de la pregunta
     if pregunta is not None:
         pregunta = pregunta.strip()
@@ -212,32 +223,48 @@ async def actualizar_pregunta(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La pregunta no puede estar vacía"
             )
-    
-    # Validar y actualizar las respuestas si se proporcionan
-    if respuestas is not None:
-        # Validar que los órdenes sean consecutivos
-        ordenes = [r.orden for r in respuestas]
-        if sorted(ordenes) != list(range(1, len(respuestas) + 1)):
+
+    # Determinar tipo de pregunta
+    tipo_pregunta = getattr(pregunta_db, "tipo_pregunta", None)
+
+    # Validar y actualizar según tipo
+    if tipo_pregunta == "abierta":
+        if respuestas is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Los órdenes de las respuestas deben ser números consecutivos empezando desde 1"
+                detail="Las preguntas abiertas no deben tener respuestas"
             )
-        
-        # Si se proporciona opción_correcta, validar que corresponda a una respuesta
-        if opcion_correcta is not None and opcion_correcta not in ordenes:
+        if opcion_correcta is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La opción correcta debe corresponder al orden de una de las respuestas"
+                detail="Las preguntas abiertas no deben tener opción correcta"
             )
-    
+    elif tipo_pregunta == "opcion_unica":
+        if respuestas is not None:
+            ordenes = [r.orden for r in respuestas]
+            if sorted(ordenes) != list(range(1, len(respuestas) + 1)):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Los órdenes de las respuestas deben ser números consecutivos empezando desde 1"
+                )
+            if opcion_correcta is not None and opcion_correcta not in ordenes:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="La opción correcta debe corresponder al orden de una de las respuestas"
+                )
+
     # Actualizar la pregunta con sus respuestas en la base de datos
     try:
+        kwargs = {
+            "opcion_correcta": opcion_correcta,
+            "respuestas": respuestas
+        }
+        if pregunta is not None:
+            kwargs["pregunta"] = pregunta
         return await crud_preguntas.update_pregunta(
             db,
             pregunta_id,
-            pregunta=pregunta,
-            opcion_correcta=opcion_correcta,
-            respuestas=respuestas
+            **kwargs
         )
     except IntegrityError as exc:
         raise HTTPException(

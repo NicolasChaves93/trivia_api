@@ -39,34 +39,53 @@ class PreguntaCreate(BaseModel):
     """
     id_seccion: int = Field(..., description="ID de la sección a la que pertenece la pregunta")
     pregunta: str = Field(..., min_length=1, description="Texto de la pregunta")
-    respuestas: List[RespuestaCreate] = Field(..., min_items=1, max_items=4, description="Lista de 1 a 4 respuestas posibles")
-    opcion_correcta: int = Field(..., gt=0, le=4, description="Número de la opción correcta (1-4)")
+    tipo_pregunta: str = Field(..., description="Tipo de pregunta: 'abierta' o 'opcion_unica'")
+    respuestas: Optional[List[RespuestaCreate]] = Field(default=None, description="Lista de 1 a 4 respuestas posibles (solo para opción única)")
+    opcion_correcta: Optional[int] = Field(default=None, description="Número de la opción correcta (1-4, solo para opción única)")
 
     @field_validator("pregunta")
     @classmethod
     def validar_pregunta(cls, value: str) -> str:
-        """Valida que la pregunta no esté vacía"""
         value = value.strip()
         if not value:
             raise ValueError("La pregunta no puede estar vacía")
         return value
 
+    @field_validator("tipo_pregunta")
+    @classmethod
+    def validar_tipo(cls, value: str) -> str:
+        if value not in ("abierta", "opcion_unica"):
+            raise ValueError("El tipo de pregunta debe ser 'abierta' o 'opcion_unica'")
+        return value
+
     @field_validator("respuestas")
     @classmethod
-    def validar_respuestas(cls, respuestas: List[RespuestaCreate]) -> List[RespuestaCreate]:
-        """Valida que los órdenes de las respuestas sean únicos y consecutivos del 1 al número de respuestas"""
-        ordenes = [r.orden for r in respuestas]
-        if sorted(ordenes) != list(range(1, len(respuestas) + 1)):
-            raise ValueError("Los órdenes de las respuestas deben ser números consecutivos empezando desde 1")
+    def validar_respuestas(cls, respuestas: Optional[List[RespuestaCreate]], info) -> Optional[List[RespuestaCreate]]:
+        tipo = info.data.get("tipo_pregunta")
+        if tipo == "opcion_unica":
+            if not respuestas or not (1 <= len(respuestas) <= 4):
+                raise ValueError("Debe haber entre 1 y 4 respuestas para preguntas de opción única")
+            ordenes = [r.orden for r in respuestas]
+            if sorted(ordenes) != list(range(1, len(respuestas) + 1)):
+                raise ValueError("Los órdenes de las respuestas deben ser números consecutivos empezando desde 1")
+        elif tipo == "abierta":
+            if respuestas:
+                raise ValueError("Las preguntas abiertas no deben tener respuestas")
         return respuestas
 
     @field_validator("opcion_correcta")
     @classmethod
-    def validar_opcion_correcta(cls, opcion: int, info) -> int:
-        """Valida que la opción correcta corresponda a una de las respuestas"""
+    def validar_opcion_correcta(cls, opcion: Optional[int], info) -> Optional[int]:
+        tipo = info.data.get("tipo_pregunta")
         respuestas = info.data.get("respuestas", [])
-        if respuestas and opcion not in [r.orden for r in respuestas]:
-            raise ValueError("La opción correcta debe corresponder al orden de una de las respuestas")
+        if tipo == "opcion_unica":
+            if opcion is None:
+                raise ValueError("Debes indicar la opción correcta para preguntas de opción única")
+            if respuestas and opcion not in [r.orden for r in respuestas]:
+                raise ValueError("La opción correcta debe corresponder al orden de una de las respuestas")
+        elif tipo == "abierta":
+            if opcion is not None:
+                raise ValueError("Las preguntas abiertas no deben tener opción correcta")
         return opcion
 
 class SeccionInfo(BaseModel):
@@ -90,7 +109,8 @@ class PreguntaOut(BaseModel):
     id_pregunta: int
     seccion: SeccionInfo
     pregunta: str
-    respuestas: List[RespuestaOut]
+    tipo_pregunta: str
+    respuestas: Optional[List[RespuestaOut]] = None
     opcion_correcta: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)

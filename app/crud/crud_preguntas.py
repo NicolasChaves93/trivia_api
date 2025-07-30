@@ -5,7 +5,7 @@ Este módulo contiene las funciones para crear, leer, actualizar y eliminar preg
 en la base de datos usando SQLAlchemy de manera asíncrona.
 """
 
-from typing import List
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -31,7 +31,8 @@ async def get_preguntas(db: AsyncSession):
     
     # Ordenar las respuestas de cada pregunta
     for pregunta in preguntas:
-        pregunta.respuestas.sort(key=lambda x: x.orden)
+        if pregunta.respuestas:
+            pregunta.respuestas.sort(key=lambda x: getattr(x, "orden", 0))
     
     return preguntas
 
@@ -52,7 +53,8 @@ async def get_preguntas_by_seccion(db: AsyncSession, id_seccion: int):
     
     # Ordenar las respuestas de cada pregunta
     for pregunta in preguntas:
-        pregunta.respuestas.sort(key=lambda x: x.orden)
+        if pregunta.respuestas:
+            pregunta.respuestas.sort(key=lambda x: getattr(x, "orden", 0))
     
     return preguntas
 
@@ -77,9 +79,8 @@ async def get_pregunta(db: AsyncSession, id_pregunta: int):
     result = await db.execute(stmt)
     pregunta = result.scalar_one_or_none()
     
-    if pregunta:
-        # Ordenar las respuestas por el campo orden
-        pregunta.respuestas.sort(key=lambda x: x.orden)
+    if pregunta and pregunta.respuestas:
+        pregunta.respuestas.sort(key=lambda x: getattr(x, "orden", 0))
     
     return pregunta
 
@@ -87,8 +88,9 @@ async def create_pregunta(
     db: AsyncSession,
     id_seccion: int,
     pregunta: str,
-    respuestas: List[RespuestaCreate],
-    opcion_correcta: int
+    tipo_pregunta: str,
+    respuestas: Optional[List[RespuestaCreate]] = None,
+    opcion_correcta: Optional[int] = None
 ):
     """
     Crea una nueva pregunta con sus respuestas.
@@ -110,21 +112,23 @@ async def create_pregunta(
     nueva_pregunta = Pregunta(
         id_seccion=id_seccion,
         pregunta=pregunta,
-        opcion_correcta=opcion_correcta
+        tipo_pregunta=tipo_pregunta,
+        opcion_correcta=opcion_correcta if tipo_pregunta == "opcion_unica" else None
     )
     db.add(nueva_pregunta)
     try:
         await db.flush()  # Para obtener el id_pregunta y validar duplicados
 
-        # Crear las respuestas
-        for resp in respuestas:
-            respuesta = Respuesta(
-                id_pregunta=nueva_pregunta.id_pregunta,
-                orden=resp.orden,
-                respuesta=resp.respuesta
-            )
-            db.add(respuesta)
-        
+        # Crear las respuestas solo si es opción única
+        if tipo_pregunta == "opcion_unica" and respuestas:
+            for resp in respuestas:
+                respuesta = Respuesta(
+                    id_pregunta=nueva_pregunta.id_pregunta,
+                    orden=resp.orden,
+                    respuesta=resp.respuesta
+                )
+                db.add(respuesta)
+
         await db.commit()
         await db.refresh(nueva_pregunta)
         return nueva_pregunta
@@ -133,11 +137,11 @@ async def create_pregunta(
         raise
 
 async def update_pregunta(
-    db: AsyncSession, 
-    id_pregunta: int, 
-    pregunta: str = None, 
-    opcion_correcta: int = None,
-    respuestas: List[RespuestaCreate] = None
+db: AsyncSession,
+id_pregunta: int,
+pregunta: Optional[str] = None,
+opcion_correcta: Optional[int] = None,
+respuestas: Optional[List[RespuestaCreate]] = None
 ):
     """
     Actualiza una pregunta existente y opcionalmente sus respuestas.
@@ -155,15 +159,17 @@ async def update_pregunta(
     pregunta_db = await get_pregunta(db, id_pregunta)
     if not pregunta_db:
         return None
-    
+
     try:
-        # Primero actualizar respuestas si se proporcionan
-        if respuestas is not None:
+        # Determinar tipo de pregunta
+        tipo_pregunta = getattr(pregunta_db, "tipo_pregunta", None)
+
+        # Actualizar respuestas solo si es opción única y se proporcionan
+        if tipo_pregunta == "opcion_unica" and respuestas is not None:
             # Eliminar respuestas existentes
             for resp in pregunta_db.respuestas:
                 await db.delete(resp)
             await db.flush()
-            
             # Crear nuevas respuestas
             for resp in respuestas:
                 nueva_resp = Respuesta(
@@ -174,14 +180,14 @@ async def update_pregunta(
                 db.add(nueva_resp)
             await db.flush()
 
-        # Luego actualizar la opción correcta si se proporciona
-        if opcion_correcta is not None:
-            pregunta_db.opcion_correcta = opcion_correcta
+        # Actualizar la opción correcta solo si es opción única
+        if tipo_pregunta == "opcion_unica" and opcion_correcta is not None:
+            setattr(pregunta_db, "opcion_correcta", opcion_correcta)
             await db.flush()
 
-        # Finalmente actualizar el texto de la pregunta si se proporciona
-        if pregunta is not None and pregunta != pregunta_db.pregunta:
-            pregunta_db.pregunta = pregunta
+        # Actualizar el texto de la pregunta si se proporciona
+        if pregunta is not None and pregunta != getattr(pregunta_db, "pregunta"):
+            setattr(pregunta_db, "pregunta", pregunta)
             await db.flush()
 
         await db.commit()
@@ -189,10 +195,8 @@ async def update_pregunta(
         return pregunta_db
     except IntegrityError as e:
         await db.rollback()
-        # Solo relanzar el error si estábamos actualizando el texto de la pregunta
         if pregunta is not None and pregunta != pregunta_db.pregunta:
             raise
-        # Si el error no fue por el texto de la pregunta, algo más salió mal
         raise ValueError("Error al actualizar la pregunta: violación de restricción de integridad") from e
 
 async def delete_pregunta(db: AsyncSession, pregunta: Pregunta):
@@ -231,6 +235,7 @@ async def get_preguntas_by_evento(db: AsyncSession, id_evento: int):
 
     # Ordenar las respuestas de cada pregunta
     for pregunta in preguntas:
-        pregunta.respuestas.sort(key=lambda x: x.orden)
+        if pregunta.respuestas:
+            pregunta.respuestas.sort(key=lambda x: getattr(x, "orden", 0))
 
     return preguntas

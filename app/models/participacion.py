@@ -58,6 +58,7 @@ class Participacion(Base):
     )
     numero_intento = Column(SmallInteger, nullable=False, default=1)
     respuestas_usuario = Column(JSONB, nullable=False)
+    respuestas_abiertas = Column(JSONB, nullable=True)
     estado = Column(
         PgEnum(EstadoParticipacion, name="estado_participacion", schema=TRIVIA_SCHEMA),
         nullable=False,

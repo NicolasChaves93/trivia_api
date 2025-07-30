@@ -101,7 +101,7 @@ async def gestionar_participacion(
 async def finalizar_participacion(
     db: AsyncSession,
     id_participacion: int,
-    respuestas_usuario: list[dict],
+    respuestas_usuario: list[dict],  # Puede incluir abiertas y opción única
     tiempo_total: str
 ) -> dict:
     """
@@ -153,11 +153,25 @@ async def finalizar_participacion(
     horas, minutos, segundos = map(int, tiempo_total.split(":"))
     duracion = timedelta(hours=horas, minutes=minutos, seconds=segundos)
 
+    # Separar respuestas abiertas y de opción única
+    respuestas_opcion = []
+    respuestas_abiertas = []
+    for resp in respuestas_usuario:
+        if resp.get("tipo_pregunta") == "abierta":
+            respuestas_abiertas.append({
+                "id_pregunta": resp["id_pregunta"],
+                "respuesta_abierta": resp.get("respuesta_abierta")
+            })
+        else:
+            respuestas_opcion.append(resp)
+
+    # Guardar ambas en la BD (puedes ajustar el modelo para soportar ambos campos si es necesario)
     stmt_update = (
         update(Participacion)
         .where(Participacion.id_participacion == id_participacion)
         .values(
-            respuestas_usuario=respuestas_usuario,
+            respuestas_usuario=respuestas_opcion,
+            respuestas_abiertas=respuestas_abiertas,
             tiempo_total=duracion,
             finished_at = datetime.now(timezone.utc),
             estado="finalizado"
