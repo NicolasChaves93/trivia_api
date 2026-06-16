@@ -43,20 +43,23 @@ async def lifespan(_: FastAPI):
     yield
     logger.info("Cerrando aplicación...")
 
-# Create FastAPI instance with custom lifespan
+# Create FastAPI instance with custom lifespan.
+# debug se activa solo fuera de producción (evita exponer tracebacks/config en prod).
 app = FastAPI(
     title="API Trivia App",
     description="API para gestionar eventos, usuarios y trivias",
     version="1.0.0",
-    debug=True,
+    debug=not settings.is_prod,
     lifespan=lifespan
 )
 
-# Enable CORS (recommended for frontend-backend integration)
+# CORS: orígenes parametrizables por env (ALLOWED_ORIGINS, separados por coma).
+# allow_credentials solo aplica con orígenes explícitos; con "*" el navegador lo rechaza.
+_origins = settings.origins_list or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update this with your frontend URL in production
-    allow_credentials=True,
+    allow_origins=_origins,
+    allow_credentials="*" not in _origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

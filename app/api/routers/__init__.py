@@ -6,10 +6,12 @@ from app.api.routers import (
     informes,
     secciones,
     preguntas,
-    grupos
+    grupos,
+    health
 )
 
 api_router = APIRouter()
+api_router.include_router(health.router)
 # Rutas principales
 api_router.include_router(eventos.router)
 api_router.include_router(secciones.router)
