@@ -47,7 +47,12 @@ async def get_preguntas_by_seccion(db: AsyncSession, id_seccion: int):
     Returns:
         List[Pregunta]: Lista de preguntas de la sección.
     """
-    stmt = select(Pregunta).options(selectinload(Pregunta.respuestas)).where(Pregunta.id_seccion == id_seccion)
+    stmt = (
+        select(Pregunta)
+        .options(selectinload(Pregunta.respuestas))
+        .where(Pregunta.id_seccion == id_seccion)
+        .order_by(Pregunta.id_pregunta)
+    )
     result = await db.execute(stmt)
     preguntas = result.scalars().all()
     
@@ -229,6 +234,7 @@ async def get_preguntas_by_evento(db: AsyncSession, id_evento: int):
             selectinload(Pregunta.seccion)
         )
         .where(Seccion.id_evento == id_evento)
+        .order_by(Pregunta.id_pregunta)
     )
     result = await db.execute(stmt)
     preguntas = result.scalars().all()
