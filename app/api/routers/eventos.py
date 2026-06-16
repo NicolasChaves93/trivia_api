@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from app.db.connection import get_db
 from app.crud import crud_eventos
+from app.core.auth import require_admin
 from app.schemas.evento import EventoRequest, EventoResponse
 
 from app.core.logger import MyLogger
@@ -36,7 +37,8 @@ Tag: `Eventos` (para agrupar en Swagger)
 # POST /eventos/
 @router.post("/", status_code=status.HTTP_201_CREATED,
              response_model=EventoResponse,
-             summary="Crear un nuevo evento"
+             summary="Crear un nuevo evento",
+             dependencies=[Depends(require_admin)]
 )
 async def crear_evento(evento_in: EventoRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -95,7 +97,8 @@ async def obtener_evento(evento_id: int, db: AsyncSession = Depends(get_db)):
         )
     return evento
 
-@router.delete("/{evento_id}", summary="Eliminar un evento", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{evento_id}", summary="Eliminar un evento", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_admin)])
 async def eliminar_evento(evento_id: int, db: AsyncSession = Depends(get_db)):
     """
     Elimina un evento por su ID.

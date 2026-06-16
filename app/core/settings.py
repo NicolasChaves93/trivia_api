@@ -40,6 +40,21 @@ class Settings(BaseSettings):
     # usuarios las consultan al jugar; cachearlas alivia la BD en concurrencia.
     preguntas_cache_ttl: int = Field(default=300, alias="PREGUNTAS_CACHE_TTL")
 
+    # Orígenes permitidos para CORS (separados por coma). '*' = cualquiera (no recomendado).
+    allowed_origins: str = Field(
+        default="http://localhost:4200",
+        alias="ALLOWED_ORIGINS",
+    )
+
+    @property
+    def origins_list(self) -> list[str]:
+        """Lista de orígenes CORS a partir de la cadena separada por comas."""
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @property
+    def is_prod(self) -> bool:
+        return self.environment == "prod"
+
     # Validadores personalizados
     @field_validator("postgres_db_port", mode="before")
     @classmethod

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from app.db.connection import get_db
 from app.crud import crud_eventos, crud_secciones
+from app.core.auth import require_admin
 from app.schemas.seccion import SeccionCreate, SeccionOut
 
 SECCION_NO_ENCONTRADA = "Sección no encontrada"
@@ -78,7 +79,8 @@ async def obtener_seccion(seccion_id: int, db: AsyncSession = Depends(get_db)):
         )
     return seccion
 
-@router.post("/", response_model=SeccionOut, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=SeccionOut, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_admin)])
 async def crear_seccion(seccion: SeccionCreate, db: AsyncSession = Depends(get_db)):
     """
     Crea una nueva sección en un evento.
@@ -114,7 +116,8 @@ async def crear_seccion(seccion: SeccionCreate, db: AsyncSession = Depends(get_d
             detail="Ya existe una sección con ese nombre en el evento"
         ) from exc
 
-@router.put("/{seccion_id}", response_model=SeccionOut)
+@router.put("/{seccion_id}", response_model=SeccionOut,
+            dependencies=[Depends(require_admin)])
 async def actualizar_seccion(
     seccion_id: int,
     nombre_seccion: str,
@@ -161,7 +164,8 @@ async def actualizar_seccion(
             detail="Ya existe otra sección con ese nombre en el evento"
         ) from exc
 
-@router.delete("/{seccion_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{seccion_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_admin)])
 async def eliminar_seccion(seccion_id: int, db: AsyncSession = Depends(get_db)):
     """
     Elimina una sección por su ID.

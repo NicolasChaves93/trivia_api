@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from app.db.connection import get_db
 from app.crud import crud_grupos, crud_eventos
+from app.core.auth import require_admin
 from app.schemas.grupo import GrupoCreate, GrupoOut
 
 router = APIRouter(prefix="/grupos", tags=["Grupos"])
@@ -59,7 +60,8 @@ async def obtener_grupo(grupo_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=GRUPO_NO_ENCONTRADO)
     return grupo
 
-@router.post("/", response_model=GrupoOut, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=GrupoOut, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_admin)])
 async def crear_grupo(grupo: GrupoCreate, db: AsyncSession = Depends(get_db)):
     """Crea un nuevo grupo en un evento."""
     evento = await crud_eventos.get_by_id(db, grupo.id_evento)
@@ -78,7 +80,8 @@ async def crear_grupo(grupo: GrupoCreate, db: AsyncSession = Depends(get_db)):
     except IntegrityError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=GRUPO_NOMBRE_DUPLICADO) from exc
 
-@router.put("/{grupo_id}", response_model=GrupoOut)
+@router.put("/{grupo_id}", response_model=GrupoOut,
+            dependencies=[Depends(require_admin)])
 async def actualizar_grupo_endpoint(
     grupo_id: int,
     nombre_grupo: Optional[str] = None,
@@ -102,7 +105,8 @@ async def actualizar_grupo_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=GRUPO_NO_ENCONTRADO)
     return grupo
 
-@router.delete("/{grupo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{grupo_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_admin)])
 async def eliminar_grupo(grupo_id: int, db: AsyncSession = Depends(get_db)):
     """Elimina un grupo por su ID."""
     grupo = await crud_grupos.get_grupo_by_id(db, grupo_id)

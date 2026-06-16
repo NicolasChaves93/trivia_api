@@ -26,14 +26,18 @@ from app.crud import crud_eventos
 from app.schemas.pregunta import PreguntaCreate, PreguntaOut, RespuestaCreate
 from app.services import carga_masiva_preguntas
 from app.core.cache import preguntas_cache
-from app.core.auth import verificar_token
+from app.core.auth import verificar_token, require_admin
 
 PREGUNTA_NO_ENCONTRADA = "Pregunta no encontrada"
 
 router = APIRouter(prefix="/preguntas", tags=["Preguntas"])
 
 
-@router.post("/cargar-masivo", summary="Cargar preguntas masivamente desde Excel (.xlsx)")
+@router.post(
+    "/cargar-masivo",
+    summary="Cargar preguntas masivamente desde Excel (.xlsx)",
+    dependencies=[Depends(require_admin)],
+)
 async def cargar_masivo(
     archivo: UploadFile = File(..., description="Archivo .xlsx con las preguntas"),
     db: AsyncSession = Depends(get_db),
@@ -208,7 +212,10 @@ async def obtener_pregunta(pregunta_id: int, db: AsyncSession = Depends(get_db))
         )
     return pregunta
 
-@router.post("/", response_model=PreguntaOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=PreguntaOut, status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
 async def crear_pregunta(pregunta: PreguntaCreate, db: AsyncSession = Depends(get_db)):
     """
     Crea una nueva pregunta en una sección con sus respuestas.
@@ -257,7 +264,8 @@ async def crear_pregunta(pregunta: PreguntaCreate, db: AsyncSession = Depends(ge
             detail="Ya existe una pregunta con el mismo texto en esta sección"
         ) from exc
 
-@router.put("/{pregunta_id}", response_model=PreguntaOut)
+@router.put("/{pregunta_id}", response_model=PreguntaOut,
+            dependencies=[Depends(require_admin)])
 async def actualizar_pregunta(
     pregunta_id: int,
     pregunta: Optional[str] = None,
@@ -357,7 +365,8 @@ async def actualizar_pregunta(
             detail="Ya existe una pregunta con el mismo texto en esta sección"
         ) from exc
 
-@router.delete("/{pregunta_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{pregunta_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_admin)])
 async def eliminar_pregunta(pregunta_id: int, db: AsyncSession = Depends(get_db)):
     """
     Elimina una pregunta por su ID.
