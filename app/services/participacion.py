@@ -1,316 +1,269 @@
 """
-Servicios para gestionar las participaciones en eventos de trivia.
+Servicios (reglas de negocio) para las participaciones en eventos de trivia.
 
-Este módulo contiene la lógica de negocio para:
-- Gestionar participaciones (crear/continuar)
-- Finalizar participaciones con respuestas
-- Eliminar participaciones
-- Consultar participaciones por estado
-- Consultar participaciones por usuario y/o evento
-- Listar todas las participaciones
+Toda la lógica de negocio vive aquí, en Python — ya no en funciones/triggers PL/pgSQL:
+- Gestionar participaciones (iniciar / continuar / esperar por cooldown / finalizado por
+  máximo de intentos).
+- Finalizar una participación: registrar respuestas y calcular el resultado.
+- Eliminar participaciones.
+
+Las lecturas simples se delegan en `app.crud.crud_participaciones`.
+
+Funciones puras (sin acceso a BD), aisladas para poder probarlas con tests unitarios:
+- `decidir_accion`: máquina de estados de intentos/cooldown.
+- `calcular_resultado`: cálculo de aciertos/porcentaje.
 """
 
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List
-from asyncpg import PostgresError
-import asyncpg
-from fastapi import HTTPException, status
-from sqlalchemy import update, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import joinedload
 
-from app.models.participacion import Participacion, EstadoParticipacion
-from app.models.usuario import Usuario
-from app.models.grupo import Grupo
+from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.crud import crud_participaciones as crud
 from app.crud.crud_grupos import get_grupo_by_id
+from app.models.participacion import EstadoParticipacion
 
 from app.core.logger import MyLogger
+
 logger = MyLogger().get_logger()
+
+# Cadenas de acción expuestas a la API (contrato con el frontend; se conservan tal cual).
+ACCION_INICIAR = "iniciar"
+ACCION_CONTINUAR = "continuar"
+ACCION_ESPERAR = "esperar"
+ACCION_FINALIZADO = "FINALIZADO"
+
+CERO = timedelta(0)
+
+
+@dataclass
+class DecisionParticipacion:
+    """Resultado de la máquina de estados de participación (objeto puro, sin BD)."""
+    accion: str
+    numero_intento: int
+    crear_nuevo: bool
+    remaining: timedelta
+
+
+def decidir_accion(
+    estado_ultimo: Optional[EstadoParticipacion],
+    numero_intento_ultimo: Optional[int],
+    finished_at_ultimo: Optional[datetime],
+    max_intentos: int,
+    cooldown: timedelta,
+    now: datetime,
+) -> DecisionParticipacion:
+    """
+    Decide qué hacer ante una solicitud de participación, replicando las reglas de negocio:
+
+    - Sin intentos previos -> iniciar intento 1.
+    - Último intento PENDIENTE -> continuar ese intento.
+    - Último intento FINALIZADO y quedan intentos:
+        - dentro del cooldown -> esperar (devuelve tiempo restante).
+        - superado el cooldown -> iniciar nuevo intento.
+    - Último intento FINALIZADO y se alcanzó el máximo -> FINALIZADO (sin más intentos).
+
+    Es una función pura: no toca la base de datos.
+    """
+    if estado_ultimo is None:
+        return DecisionParticipacion(ACCION_INICIAR, 1, True, CERO)
+
+    if estado_ultimo == EstadoParticipacion.PENDIENTE:
+        return DecisionParticipacion(
+            ACCION_CONTINUAR, numero_intento_ultimo, False, CERO
+        )
+
+    # Último intento finalizado
+    if numero_intento_ultimo < max_intentos:
+        disponible_en = (finished_at_ultimo + cooldown) if finished_at_ultimo else now
+        if now < disponible_en:
+            return DecisionParticipacion(
+                ACCION_ESPERAR, numero_intento_ultimo, False, disponible_en - now
+            )
+        return DecisionParticipacion(
+            ACCION_INICIAR, numero_intento_ultimo + 1, True, CERO
+        )
+
+    return DecisionParticipacion(
+        ACCION_FINALIZADO, numero_intento_ultimo, False, CERO
+    )
+
+
+def calcular_resultado(
+    respuestas: List[dict], opciones_correctas: Dict[int, int]
+) -> Dict[str, Any]:
+    """
+    Calcula el resultado de una participación a partir de las respuestas del usuario.
+
+    Solo se cuentan las respuestas cuya pregunta exista (presente en `opciones_correctas`),
+    igual que el JOIN contra `preguntas` del trigger original.
+
+    Es una función pura: no toca la base de datos.
+    """
+    validas = [r for r in respuestas if r["id_pregunta"] in opciones_correctas]
+    total = len(validas)
+    correctas = sum(
+        1
+        for r in validas
+        if r["respuesta_seleccionada"] == opciones_correctas[r["id_pregunta"]]
+    )
+    incorrectas = total - correctas
+    porcentaje = round(100.0 * correctas / total, 2) if total else 0.0
+    return {
+        "total_preguntas": total,
+        "respuestas_correctas": correctas,
+        "respuestas_incorrectas": incorrectas,
+        "porcentaje_acierto": porcentaje,
+    }
 
 
 async def gestionar_participacion(
     db: AsyncSession,
     nombre: str,
     cedula: str,
-    grupo_id: int
+    grupo_id: int,
 ) -> Dict[str, Any]:
     """
-    Gestiona la participación de un usuario en un grupo:
-    - Valida existencia y vigencia del grupo
-    - Llama a la función PL/pgSQL que controla intentos y cooldown
-    - Lee el campo `remaining` devuelto para el tiempo restante
+    Gestiona la participación de un usuario en un grupo: crea, continúa, hace esperar o marca
+    como finalizado el intento según las reglas de negocio. Todo en una única transacción,
+    serializada por (usuario, grupo) mediante advisory lock para evitar carreras.
     """
-    # 1. Validar que el grupo exista y esté activo
-    grupo = await  get_grupo_by_id(db, grupo_id)
+    grupo = await get_grupo_by_id(db, grupo_id)
     if not grupo:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Grupo no encontrado"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Grupo no encontrado"
         )
 
     now = datetime.now(timezone.utc)
     if not (grupo.fecha_inicio <= now <= grupo.fecha_cierre):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="El grupo está cerrado o aún no ha iniciado"
+            detail="El grupo está cerrado o aún no ha iniciado",
         )
 
     try:
-        # 3. Invocar la función almacenada
-        func = text("""
-            SELECT action, id_part, respuestas, started_at, finished_at, tiempo_tot, remaining
-            FROM trivia.gestionar_participacion(:nombre, :cedula, :grupo_id)
-        """).bindparams(nombre=nombre, cedula=cedula, grupo_id=grupo_id)
-        result = await db.execute(func)
-        row = result.fetchone()
+        id_usuario = await crud.upsert_usuario(db, nombre=nombre, cedula=cedula)
+        await crud.lock_participaciones_usuario_grupo(db, id_usuario, grupo_id)
 
-        if not row or row.id_part is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="No se pudo iniciar o recuperar la participación"
-            )
-
-        # 3. Obtener número de intento
-        intento_res = await db.execute(
-            text("""
-                SELECT numero_intento
-                FROM trivia.participaciones
-                WHERE id_participacion = :id_part
-            """).bindparams(id_part=row.id_part)
+        ultimo = await crud.get_ultimo_intento(db, id_usuario, grupo_id)
+        decision = decidir_accion(
+            estado_ultimo=ultimo.estado if ultimo else None,
+            numero_intento_ultimo=ultimo.numero_intento if ultimo else None,
+            finished_at_ultimo=ultimo.finished_at if ultimo else None,
+            max_intentos=grupo.max_intentos,
+            cooldown=grupo.cooldown,
+            now=now,
         )
-        numero_intento = intento_res.scalar_one_or_none() or 1
 
-        # 4. Commit y retornar
+        if decision.crear_nuevo:
+            participacion = await crud.crear_participacion(
+                db,
+                id_usuario=id_usuario,
+                id_grupo=grupo_id,
+                numero_intento=decision.numero_intento,
+                started_at=now,
+            )
+        else:
+            participacion = ultimo
+
         await db.commit()
 
         return {
-            "action":            row.action,
-            "id_participacion":  row.id_part,
-            "numero_intento":    numero_intento,
-            "respuestas":        row.respuestas or [],
-            "started_at":        row.started_at,
-            "finished_at":       row.finished_at,
-            "tiempo_total":      str(row.tiempo_tot) if row.tiempo_tot else None,
-            "remaining":         str(row.remaining)
+            "action": decision.accion,
+            "id_participacion": participacion.id_participacion,
+            "numero_intento": participacion.numero_intento,
+            "respuestas": participacion.respuestas_usuario or [],
+            "started_at": participacion.started_at,
+            "finished_at": participacion.finished_at,
+            "tiempo_total": (
+                str(participacion.tiempo_total) if participacion.tiempo_total else None
+            ),
+            "remaining": str(decision.remaining),
         }
     except HTTPException:
         await db.rollback()
         raise
+    except IntegrityError:
+        # Carrera al crear el primer intento simultáneamente: lo tratamos como conflicto.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Conflicto al gestionar la participación, intente nuevamente",
+        )
+
 
 async def finalizar_participacion(
     db: AsyncSession,
     id_participacion: int,
     respuestas_usuario: list[dict],
-    tiempo_total: str
+    tiempo_total: str,
 ) -> dict:
     """
-    Finaliza una participación de trivia actualizando su estado y registrando las respuestas.
-
-    Esta función realiza las siguientes acciones:
-    - Valida la existencia de la participación.
-    - Verifica que no esté ya finalizada.
-    - Registra las respuestas seleccionadas por el usuario en formato JSONB.
-    - Establece el tiempo total de resolución.
-    - Marca la participación como finalizada (`estado = 'Finalizado'`).
-    - El trigger de base de datos se encarga de calcular:
-        - Las respuestas desglosadas (`respuestas_usuarios`)
-        - Los resultados (`resultados`)
+    Finaliza una participación: registra las respuestas, marca el estado como finalizado y
+    calcula el resultado (respuestas desglosadas + agregados), todo en Python y en una sola
+    transacción. Reemplaza al trigger `trg_participacion_finalizada`.
 
     Args:
-        db (AsyncSession): Sesión asíncrona de SQLAlchemy.
-        id_participacion (int): ID de la participación a finalizar.
-        respuestas_usuario (list[dict]): Lista de objetos con `id_pregunta` y `respuesta_seleccionada`.
-        tiempo_total (str): Duración total en formato "HH:MM:SS".
-
-    Returns:
-        dict: Un mensaje de éxito con el ID de participación finalizada.
+        db: Sesión asíncrona de SQLAlchemy.
+        id_participacion: ID de la participación a finalizar.
+        respuestas_usuario: Lista de objetos con `id_pregunta` y `respuesta_seleccionada`.
+        tiempo_total: Duración total en formato "HH:MM:SS".
 
     Raises:
-        HTTPException:
-            - 404: Si no se encuentra la participación.
-            - 400: Si la participación ya está finalizada.
+        HTTPException: 404 si no existe; 400 si ya está finalizada.
     """
-    # Obtener participación existente
-    stmt = select(Participacion).where(Participacion.id_participacion == id_participacion)
-    result = await db.execute(stmt)
-    participacion = result.scalar_one_or_none()
-
+    participacion = await crud.get_participacion_by_id(db, id_participacion)
     if not participacion:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Participación no encontrada."
+            detail="Participación no encontrada.",
         )
 
-    if participacion.estado == "finalizado":
+    if participacion.estado == EstadoParticipacion.FINALIZADO:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La participación ya está finalizada."
+            detail="La participación ya está finalizada.",
         )
 
-    # Preparar datos para actualizar
-    # Parsear el string "HH:MM:SS" a timedelta
     horas, minutos, segundos = map(int, tiempo_total.split(":"))
     duracion = timedelta(hours=horas, minutes=minutos, seconds=segundos)
 
-    stmt_update = (
-        update(Participacion)
-        .where(Participacion.id_participacion == id_participacion)
-        .values(
-            respuestas_usuario=respuestas_usuario,
-            tiempo_total=duracion,
-            finished_at = datetime.now(timezone.utc),
-            estado="finalizado"
-        )
-    )
+    # 1. Actualizar la participación.
+    participacion.respuestas_usuario = respuestas_usuario
+    participacion.tiempo_total = duracion
+    participacion.finished_at = datetime.now(timezone.utc)
+    participacion.estado = EstadoParticipacion.FINALIZADO
 
-    await db.execute(stmt_update)
+    # 2. Desglosar respuestas y calcular el resultado (antes lo hacía el trigger).
+    await crud.upsert_respuestas_usuario(db, id_participacion, respuestas_usuario)
+    ids_pregunta = [r["id_pregunta"] for r in respuestas_usuario]
+    opciones_correctas = await crud.get_opciones_correctas(db, ids_pregunta)
+    datos = calcular_resultado(respuestas_usuario, opciones_correctas)
+    await crud.upsert_resultado(db, id_participacion, datos, duracion)
+
     await db.commit()
 
-    return {"mensaje": "Participación finalizada correctamente", "id": id_participacion}
+    return {
+        "mensaje": "Participación finalizada correctamente",
+        "id": id_participacion,
+    }
+
 
 async def eliminar_participacion(db: AsyncSession, id_participacion: int) -> None:
     """
     Elimina una participación por su ID.
 
-    Args:
-        db (AsyncSession): Sesión de base de datos
-        id_participacion (int): ID de la participación a eliminar
-
     Raises:
-        HTTPException: 404 si la participación no existe
+        HTTPException: 404 si la participación no existe.
     """
-    participacion = await db.get(Participacion, id_participacion)
+    participacion = await crud.get_participacion_by_id(db, id_participacion)
     if not participacion:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Participación no encontrada"
+            detail="Participación no encontrada",
         )
-    
     await db.delete(participacion)
     await db.commit()
-
-async def get_participaciones_por_estado(
-    db: AsyncSession,
-    estado: EstadoParticipacion,
-    id_evento: Optional[int] = None,
-    id_grupo: Optional[int] = None
-) -> List[Participacion]:
-    """
-    Obtiene todas las participaciones que tienen un estado específico.
-
-    Args:
-        db (AsyncSession): Sesión de base de datos
-        estado (EstadoParticipacion): Estado de las participaciones a buscar
-
-    Returns:
-        List[Participacion]: Lista de participaciones con el estado especificado y datos del usuario
-    """
-    stmt = (
-        select(Participacion)
-        .options(joinedload(Participacion.usuario))
-        .where(Participacion.estado == estado)
-        .order_by(Participacion.id_participacion.asc())
-    )
-
-    # Aplicar filtros según los parámetros proporcionados
-    if id_evento is not None:
-        stmt = (
-            stmt.join(Grupo)
-            .where(Grupo.id_evento == id_evento)
-        )
-    if id_grupo is not None:
-        stmt = stmt.where(Participacion.id_grupo == id_grupo)
-
-    result = await db.execute(stmt)
-    return result.scalars().all()
-
-async def get_participaciones_por_usuario_evento(
-    db: AsyncSession,
-    cedula: Optional[str] = None,
-    id_evento: Optional[int] = None,
-    id_grupo: Optional[int] = None
-) -> List[Participacion]:
-    """
-    Obtiene participaciones filtrando por cédula del usuario, evento y/o grupo.
-
-    Args:
-        db (AsyncSession): Sesión de base de datos
-        cedula (Optional[str]): Cédula del usuario para filtrar (opcional)
-        id_evento (Optional[int]): ID del evento para filtrar (opcional)
-        id_grupo (Optional[int]): ID del grupo para filtrar (opcional)
-
-    Returns:
-        List[Participacion]: Lista de participaciones que coinciden con los filtros
-
-    Raises:
-        HTTPException: 400 si no se proporciona ningún filtro
-    """
-    if cedula is None and id_evento is None and id_grupo is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Debe proporcionar al menos un criterio de búsqueda (cedula, id_evento o id_grupo)"
-        )
-
-    # Construir la consulta base con joins necesarios
-    stmt = (
-        select(Participacion)
-        .options(joinedload(Participacion.usuario))
-        .options(joinedload(Participacion.grupo))
-    )
-    
-    # Aplicar filtros según los parámetros proporcionados
-    if cedula is not None:
-        stmt = stmt.join(Usuario).where(Usuario.cedula == cedula)
-    if id_evento is not None:
-        stmt = (
-            stmt.join(Grupo)
-            .where(Grupo.id_evento == id_evento)
-        )
-    if id_grupo is not None:
-        stmt = stmt.where(Participacion.id_grupo == id_grupo)
-    
-    # Ordenar por fecha de inicio descendente (más recientes primero)
-    stmt = stmt.order_by(Participacion.started_at.desc())
-    
-    result = await db.execute(stmt)
-    return result.scalars().all()
-
-async def get_all_participaciones(db: AsyncSession) -> List[Participacion]:
-    """
-    Obtiene todas las participaciones registradas.
-
-    Args:
-        db (AsyncSession): Sesión de base de datos
-
-    Returns:
-        List[Participacion]: Lista de todas las participaciones con datos del usuario y grupo
-    """
-    stmt = (
-        select(Participacion)
-        .options(joinedload(Participacion.usuario))
-        .options(joinedload(Participacion.grupo))
-        .order_by(Participacion.started_at.desc())
-    )
-    result = await db.execute(stmt)
-    return result.scalars().all()
-
-async def get_participaciones_por_grupo(db: AsyncSession, id_grupo: int) -> List[Participacion]:
-    """
-    Obtiene todas las participaciones de un grupo específico.
-
-    Args:
-        db (AsyncSession): Sesión de base de datos
-        id_grupo (int): ID del grupo para filtrar
-
-    Returns:
-        List[Participacion]: Lista de participaciones del grupo con datos del usuario
-    """
-    stmt = (
-        select(Participacion)
-        .options(joinedload(Participacion.usuario))
-        .where(Participacion.id_grupo == id_grupo)
-        .order_by(Participacion.started_at.desc())
-    )
-    result = await db.execute(stmt)
-    return result.scalars().all()
