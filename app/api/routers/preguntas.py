@@ -25,6 +25,7 @@ from app.crud import crud_secciones
 from app.crud import crud_eventos
 from app.schemas.pregunta import PreguntaCreate, PreguntaOut, RespuestaCreate
 from app.services import carga_masiva_preguntas
+from app.core.cache import preguntas_cache
 from app.core.auth import verificar_token
 
 PREGUNTA_NO_ENCONTRADA = "Pregunta no encontrada"
@@ -52,11 +53,13 @@ async def cargar_masivo(
         )
     contenido = await archivo.read()
     try:
-        return await carga_masiva_preguntas.cargar_preguntas(db, contenido)
+        resumen = await carga_masiva_preguntas.cargar_preguntas(db, contenido)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
+    preguntas_cache.clear()  # invalidar caché tras carga masiva
+    return resumen
 
 
 @router.get("/plantilla-carga", summary="Descargar plantilla Excel para carga masiva")
@@ -169,11 +172,19 @@ async def listar_preguntas_por_evento(
             detail=f"Evento con ID {evento_id} no encontrado"
         )
 
+    # Caché por (evento, grupo): las preguntas cambian poco y todos las consultan.
+    cache_key = (evento_id, usuario.get("id_grupo"))
+    cacheadas = preguntas_cache.get(cache_key)
+    if cacheadas is not None:
+        return cacheadas
+
     # Obtener preguntas del evento: comunes + las específicas del grupo del usuario
     preguntas = await crud_preguntas.get_preguntas_by_evento(
         db, evento_id, id_grupo=usuario.get("id_grupo")
     )
-    return preguntas
+    salida = [PreguntaOut.model_validate(p) for p in preguntas]
+    preguntas_cache.set(cache_key, salida)
+    return salida
 
 @router.get("/{pregunta_id}", response_model=PreguntaOut)
 async def obtener_pregunta(pregunta_id: int, db: AsyncSession = Depends(get_db)):
@@ -230,7 +241,7 @@ async def crear_pregunta(pregunta: PreguntaCreate, db: AsyncSession = Depends(ge
         opcion_correcta = pregunta.opcion_correcta
 
     try:
-        return await crud_preguntas.create_pregunta(
+        nueva = await crud_preguntas.create_pregunta(
             db,
             pregunta.id_seccion,
             pregunta.pregunta,
@@ -238,6 +249,8 @@ async def crear_pregunta(pregunta: PreguntaCreate, db: AsyncSession = Depends(ge
             respuestas,
             opcion_correcta
         )
+        preguntas_cache.clear()  # invalidar caché tras crear
+        return nueva
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -331,11 +344,13 @@ async def actualizar_pregunta(
         }
         if pregunta is not None:
             kwargs["pregunta"] = pregunta
-        return await crud_preguntas.update_pregunta(
+        actualizada = await crud_preguntas.update_pregunta(
             db,
             pregunta_id,
             **kwargs
         )
+        preguntas_cache.clear()  # invalidar caché tras actualizar
+        return actualizada
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -361,3 +376,4 @@ async def eliminar_pregunta(pregunta_id: int, db: AsyncSession = Depends(get_db)
         )
     
     await crud_preguntas.delete_pregunta(db, pregunta)
+    preguntas_cache.clear()  # invalidar caché tras eliminar

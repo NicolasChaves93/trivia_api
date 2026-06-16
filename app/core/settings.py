@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=5, alias="DB_MAX_OVERFLOW")
     db_pool_timeout: int = Field(default=30, alias="DB_POOL_TIMEOUT")
 
+    # Caché de preguntas (segundos). Las preguntas cambian poco y todos los
+    # usuarios las consultan al jugar; cachearlas alivia la BD en concurrencia.
+    preguntas_cache_ttl: int = Field(default=300, alias="PREGUNTAS_CACHE_TTL")
+
     # Validadores personalizados
     @field_validator("postgres_db_port", mode="before")
     @classmethod
