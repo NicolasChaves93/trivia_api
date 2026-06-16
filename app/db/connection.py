@@ -1,23 +1,11 @@
-import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from dotenv import load_dotenv
 
-load_dotenv()
+from app.core.settings_instance import settings
 
-# Get database URL from environment variable
-DB_USER = os.getenv("POSTGRES_DB_USER")
-DB_PASSWORD = os.getenv("POSTGRES_DB_PASSWORD")
-DB_HOST = os.getenv("POSTGRES_DB_HOST")
-DB_PORT = int(os.getenv("POSTGRES_DB_PORT"))
-DB_NAME = os.getenv("POSTGRES_DB_NAME")
-
-DATABASE_URL = (
-    f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    )
-
-print(f"Connecting to database at {DATABASE_URL}")
+# Única fuente de verdad para la conexión: la configuración centralizada (pydantic).
+DATABASE_URL = settings.database_url
 
 # Create async engine
 engine = create_async_engine(

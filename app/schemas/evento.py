@@ -10,11 +10,11 @@ Contiene la clase `EventoCreate` que valida el campo `nombre_evento`:
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
-class TipoLogin(str, Enum):
-    GENERICO = "generico"
-    LOCALIDAD = "localidad"
+class TipoEvento(str, Enum):
+    TRIVIA_GENERAL = "trivia-general"
+    SORTEO_GENERAL = "sorteo-general"
 
-class EventoCreate(BaseModel):
+class EventoRequest(BaseModel):
     """
     Esquema de entrada para crear un nuevo evento.
 
@@ -22,7 +22,7 @@ class EventoCreate(BaseModel):
         nombre_evento (str): Nombre del evento. No puede estar vacío y se convierte automáticamente a título.
     """
     nombre_evento: str = Field(..., min_length=1, description="Nombre del evento")
-    tipo_login: TipoLogin = Field(default=TipoLogin.GENERICO, description="Tipo de autenticación para el evento")
+    tipo_evento: TipoEvento = Field(default=TipoEvento.TRIVIA_GENERAL, description="Tipo de evento")
 
     @field_validator("nombre_evento")
     @classmethod
@@ -48,7 +48,7 @@ class EventoCreate(BaseModel):
             raise ValueError("El nombre del evento no puede estar vacío")
         return value.title()
     
-class EventoOut(BaseModel):
+class EventoResponse(BaseModel):
     """
     Esquema de salida para representar un evento en las respuestas de la API.
 
@@ -56,9 +56,9 @@ class EventoOut(BaseModel):
         id_evento (int): Identificador único del evento.
         nombre_evento (str): Nombre del evento en formato Título.
     """
-    id_evento: int
+    id_evento    : int
     nombre_evento: str
-    tipo_login: TipoLogin
+    tipo_evento  : TipoEvento
 
     class Config:
-        orm_mode = True  # Habilita compatibilidad con SQLAlchemy
+        from_attributes = True  # Habilita compatibilidad con SQLAlchemy

@@ -13,18 +13,21 @@ Este modelo incluye:
 import enum
 from sqlalchemy import Column, Integer, String
 from sqlalchemy import Enum as PgEnum
-from app.db.connection import Base
 
-class TipoLogin(str, enum.Enum):
+from app.db.connection import Base
+from app.core.settings_instance import settings
+
+
+class TipoEvento(str, enum.Enum):
     """
     Enum que define los tipos de autenticación permitidos por evento.
 
     Valores:
         - generico: Permite login libre, sin verificación
-        - localidad: Requiere datos de validación específicos (ej. cédula o código)
+        - sorteo_general: Evento de tipo sorteo general
     """
-    generico = "generico"
-    localidad = "localidad"
+    TRIVIA_GENERAL = "trivia-general"
+    SORTEO_GENERAL = "sorteo-general"
 
 class Evento(Base):
     """
@@ -39,7 +42,7 @@ class Evento(Base):
     """
 
     __tablename__ = "eventos"
-    __table_args__ = {"schema": "trivia"}
+    __table_args__ = {"schema": settings.postgres_db_schema}
 
     id_evento = Column(
         Integer,
@@ -55,9 +58,9 @@ class Evento(Base):
         doc="Nombre del evento (único por sistema)"
     )
 
-    tipo_login = Column(
-        PgEnum(TipoLogin, name="tipo_login", schema="trivia"),
+    tipo_evento = Column(
+        PgEnum(TipoEvento, name="tipo_evento", schema=settings.postgres_db_schema),
         nullable=False,
-        default=TipoLogin.generico,
-        doc="Tipo de autenticación habilitada para el evento"
+        default=TipoEvento.TRIVIA_GENERAL,
+        doc="Tipo de evento"
     )

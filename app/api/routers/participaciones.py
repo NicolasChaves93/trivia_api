@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.connection import get_db
 from app.services import participacion
+from app.crud import crud_participaciones
 from app.schemas.participacion import (
     GestionarParticipacionRequest,
     FinalizarParticipacionRequest,
@@ -167,7 +168,7 @@ async def listar_por_estado(
     Returns:
         ListarParticipacionesResponse: Lista de participaciones y total
     """
-    participaciones = await participacion.get_participaciones_por_estado(
+    participaciones = await crud_participaciones.get_participaciones_por_estado(
         db, estado, id_evento=id_evento, id_grupo=id_grupo
     )
     return ListarParticipacionesResponse(
@@ -201,7 +202,7 @@ async def buscar_participaciones(
     Raises:
         HTTPException: 400 si no se proporciona ningún filtro
     """
-    participaciones = await participacion.get_participaciones_por_usuario_evento(
+    participaciones = await crud_participaciones.get_participaciones_por_usuario_evento(
         db,
         cedula=cedula,
         id_evento=id_evento,
@@ -229,7 +230,7 @@ async def listar_participaciones(
     Returns:
         ListarParticipacionesResponse: Lista de todas las participaciones y total
     """
-    participaciones = await participacion.get_all_participaciones(db)
+    participaciones = await crud_participaciones.get_all_participaciones(db)
     return ListarParticipacionesResponse(
         participaciones=participaciones,
         total=len(participaciones)
@@ -257,7 +258,7 @@ async def listar_por_grupo(
     Raises:
         HTTPException: 404 si el grupo no existe
     """
-    participaciones = await participacion.get_participaciones_por_grupo(db, id_grupo)
+    participaciones = await crud_participaciones.get_participaciones_por_grupo(db, id_grupo)
     return ListarParticipacionesResponse(
         participaciones=participaciones,
         total=len(participaciones)
