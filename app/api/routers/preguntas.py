@@ -169,8 +169,10 @@ async def listar_preguntas_por_evento(
             detail=f"Evento con ID {evento_id} no encontrado"
         )
 
-    # Obtener preguntas asociadas al evento
-    preguntas = await crud_preguntas.get_preguntas_by_evento(db, evento_id)
+    # Obtener preguntas del evento: comunes + las específicas del grupo del usuario
+    preguntas = await crud_preguntas.get_preguntas_by_evento(
+        db, evento_id, id_grupo=usuario.get("id_grupo")
+    )
     return preguntas
 
 @router.get("/{pregunta_id}", response_model=PreguntaOut)

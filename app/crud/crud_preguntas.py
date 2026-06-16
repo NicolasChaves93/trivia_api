@@ -215,17 +215,26 @@ async def delete_pregunta(db: AsyncSession, pregunta: Pregunta):
     await db.delete(pregunta)
     await db.commit()
 
-async def get_preguntas_by_evento(db: AsyncSession, id_evento: int):
+async def get_preguntas_by_evento(db: AsyncSession, id_evento: int, id_grupo=None):
     """
-    Obtiene todas las preguntas de un evento, incluyendo el nombre de la sección.
+    Obtiene las preguntas de un evento, incluyendo el nombre de la sección.
+
+    Filtra por alcance de sección (modelo mixto):
+      - Secciones comunes del evento (`id_grupo` NULL): siempre se incluyen.
+      - Secciones específicas de un grupo: solo si se pasa `id_grupo` y coincide.
+    Si `id_grupo` es None se devuelven únicamente las preguntas de secciones comunes.
 
     Args:
         db (AsyncSession): Sesión de base de datos.
         id_evento (int): ID del evento.
+        id_grupo (int | None): Grupo del usuario; suma sus secciones específicas.
 
     Returns:
         List[Pregunta]: Preguntas del evento con relaciones cargadas.
     """
+    alcance = Seccion.id_grupo.is_(None)
+    if id_grupo is not None:
+        alcance = alcance | (Seccion.id_grupo == id_grupo)
     stmt = (
         select(Pregunta)
         .join(Seccion)
@@ -233,7 +242,7 @@ async def get_preguntas_by_evento(db: AsyncSession, id_evento: int):
             selectinload(Pregunta.respuestas),
             selectinload(Pregunta.seccion)
         )
-        .where(Seccion.id_evento == id_evento)
+        .where(Seccion.id_evento == id_evento, alcance)
         .order_by(Pregunta.id_pregunta)
     )
     result = await db.execute(stmt)
