@@ -12,8 +12,10 @@ Incluye operaciones CRUD:
 Las respuestas están documentadas automáticamente en Swagger (/docs).
 """
 
+from io import BytesIO
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -22,11 +24,71 @@ from app.crud import crud_preguntas
 from app.crud import crud_secciones
 from app.crud import crud_eventos
 from app.schemas.pregunta import PreguntaCreate, PreguntaOut, RespuestaCreate
+from app.services import carga_masiva_preguntas
 from app.core.auth import verificar_token
 
 PREGUNTA_NO_ENCONTRADA = "Pregunta no encontrada"
 
 router = APIRouter(prefix="/preguntas", tags=["Preguntas"])
+
+
+@router.post("/cargar-masivo", summary="Cargar preguntas masivamente desde Excel (.xlsx)")
+async def cargar_masivo(
+    archivo: UploadFile = File(..., description="Archivo .xlsx con las preguntas"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Crea preguntas en lote a partir de un Excel. Devuelve un resumen con el total de
+    filas, las preguntas creadas y los errores por fila (sin detener la carga).
+
+    Columnas esperadas: evento, grupo, seccion, tipo_pregunta, pregunta,
+    opcion_1..opcion_4, opcion_correcta. Descarga la plantilla en /preguntas/plantilla-carga.
+    """
+    nombre = (archivo.filename or "").lower()
+    if not nombre.endswith(".xlsx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo debe ser .xlsx",
+        )
+    contenido = await archivo.read()
+    try:
+        return await carga_masiva_preguntas.cargar_preguntas(db, contenido)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+
+@router.get("/plantilla-carga", summary="Descargar plantilla Excel para carga masiva")
+async def plantilla_carga():
+    """Devuelve un .xlsx con los encabezados y filas de ejemplo para la carga masiva."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "preguntas"
+    ws.append(carga_masiva_preguntas.ENCABEZADOS)
+    # Filas de ejemplo
+    ws.append([
+        "Bienestar Docente", "", "General", "opcion_unica",
+        "¿Cuál es la capital de Francia?", "Madrid", "París", "Londres", "", 2,
+    ])
+    ws.append([
+        "Bienestar Docente", "Grupo 1", "Específicas", "opcion_opinion",
+        "¿Le gustó la jornada?", "Sí", "No", "N/A", "", "",
+    ])
+    ws.append([
+        "Bienestar Docente", "", "General", "abierta",
+        "¿Qué temas reforzaría?", "", "", "", "", "",
+    ])
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=plantilla_preguntas.xlsx"},
+    )
 
 @router.get("/", response_model=List[PreguntaOut])
 async def listar_preguntas(db: AsyncSession = Depends(get_db)):
