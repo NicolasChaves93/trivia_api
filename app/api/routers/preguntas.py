@@ -239,7 +239,7 @@ async def actualizar_pregunta(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Las preguntas abiertas no deben tener opción correcta"
             )
-    elif tipo_pregunta == "opcion_unica":
+    elif tipo_pregunta in ("opcion_unica", "opcion_opinion"):
         if respuestas is not None:
             ordenes = [r.orden for r in respuestas]
             if sorted(ordenes) != list(range(1, len(respuestas) + 1)):
@@ -247,11 +247,17 @@ async def actualizar_pregunta(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Los órdenes de las respuestas deben ser números consecutivos empezando desde 1"
                 )
-            if opcion_correcta is not None and opcion_correcta not in ordenes:
+            if tipo_pregunta == "opcion_unica" and opcion_correcta is not None \
+                    and opcion_correcta not in ordenes:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="La opción correcta debe corresponder al orden de una de las respuestas"
                 )
+        if tipo_pregunta == "opcion_opinion" and opcion_correcta is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Las preguntas de opinión no deben tener opción correcta"
+            )
 
     # Actualizar la pregunta con sus respuestas en la base de datos
     try:

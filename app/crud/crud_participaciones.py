@@ -107,8 +107,11 @@ async def get_opciones_correctas(
     if not ids_pregunta:
         return {}
     from app.models.pregunta import Pregunta
+    # Solo preguntas con opción correcta definida puntúan. Las de opinión
+    # ('opcion_opinion') y abiertas tienen opcion_correcta NULL y se excluyen.
     stmt = select(Pregunta.id_pregunta, Pregunta.opcion_correcta).where(
-        Pregunta.id_pregunta.in_(ids_pregunta)
+        Pregunta.id_pregunta.in_(ids_pregunta),
+        Pregunta.opcion_correcta.isnot(None),
     )
     result = await db.execute(stmt)
     return {row.id_pregunta: row.opcion_correcta for row in result.all()}
