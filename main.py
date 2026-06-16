@@ -12,13 +12,15 @@ Methods:
 
 from contextlib import asynccontextmanager
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 
 from app.db.init_db import init
 from app.api.routers import api_router
 from app.core.logger import MyLogger
+from app.core.settings_instance import settings
 
 # Configurar el logger al inicio de la aplicación
 logger = MyLogger().get_logger(name="main")
@@ -32,6 +34,10 @@ async def lifespan(_: FastAPI):
     It's useful for initializing connections, loading configs, etc.
     """
     logger.info("Inicializando aplicación...")
+    logger.info(
+        "Config pool BD: pool_size=%s max_overflow=%s pool_timeout=%s",
+        settings.db_pool_size, settings.db_max_overflow, settings.db_pool_timeout,
+    )
     await init()
     logger.info("Base de datos inicializada correctamente")
     yield
@@ -82,6 +88,23 @@ app.openapi = custom_openapi
 
 # Register API routers
 app.include_router(api_router)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Registra cualquier excepción no controlada con traceback y contexto.
+
+    Garantiza que los fallos queden en los logs (stdout -> Log Stream de Azure)
+    para poder diagnosticar, especialmente bajo concurrencia.
+    """
+    logger.exception(
+        "Error no controlado en %s %s: %s",
+        request.method, request.url.path, exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Error interno del servidor"},
+    )
 
 if __name__ == "__main__":
     logger.info("Iniciando servidor...")

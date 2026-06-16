@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # Logging
     log_consola_level: str = Field("INFO", alias="LOG_CONSOLA_LEVEL")
 
+    # Pool de conexiones a la BD (por worker). Tunear según el límite de Postgres
+    # y el número de workers de gunicorn para evitar agotar conexiones.
+    db_pool_size: int = Field(default=10, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=5, alias="DB_MAX_OVERFLOW")
+    db_pool_timeout: int = Field(default=30, alias="DB_POOL_TIMEOUT")
+
     # Validadores personalizados
     @field_validator("postgres_db_port", mode="before")
     @classmethod

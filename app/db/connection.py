@@ -7,15 +7,19 @@ from app.core.settings_instance import settings
 # Única fuente de verdad para la conexión: la configuración centralizada (pydantic).
 DATABASE_URL = settings.database_url
 
-# Create async engine
+# Create async engine.
+# OJO concurrencia: el pool es POR WORKER. Conexiones máximas de esta app =
+# (pool_size + max_overflow) * nº de workers de gunicorn. Ajustar via env
+# (DB_POOL_SIZE / DB_MAX_OVERFLOW) para no agotar el límite de Postgres.
 engine = create_async_engine(
     DATABASE_URL,
-    echo=False,                # True solo en desarrollo
-    future=True,               # API moderna
-    pool_pre_ping=True,        # Verifica conexiones
-    pool_size=20,              # Pool base
-    max_overflow=10,           # Extra en carga pico
-    pool_recycle=1800          # Evita timeouts
+    echo=False,                              # True solo en desarrollo
+    future=True,                             # API moderna
+    pool_pre_ping=True,                      # Verifica conexiones
+    pool_size=settings.db_pool_size,         # Pool base por worker
+    max_overflow=settings.db_max_overflow,   # Extra en carga pico
+    pool_timeout=settings.db_pool_timeout,   # Falla rápido si no hay conexión libre
+    pool_recycle=1800,                       # Evita timeouts/conexiones zombi
 )
 
 def get_engine():
