@@ -13,6 +13,8 @@ class Grupo(Base):
     __tablename__ = "grupos"
     __table_args__ = (
         UniqueConstraint("id_evento", "nombre_grupo"),
+        # Requerido como destino del FK compuesto de secciones (id_evento, id_grupo)
+        UniqueConstraint("id_evento", "id_grupo", name="uq_grupo_evento_id"),
         CheckConstraint("fecha_cierre > fecha_inicio", name="ck_fecha"),
         CheckConstraint("max_intentos > 0", name="ck_max_intentos"),
         CheckConstraint("cooldown >= interval '0 seconds'", name="ck_cooldown"),
