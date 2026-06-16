@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION trivia.trg_participacion_finalizada()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.estado = 'finalizado' AND OLD.estado <> 'finalizado' THEN
+    IF NEW.estado = 'FINALIZADO' AND OLD.estado <> 'FINALIZADO' THEN
         -- Desglosar respuestas del JSONB
         WITH cte AS (
             SELECT 

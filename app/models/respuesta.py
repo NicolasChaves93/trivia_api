@@ -2,7 +2,9 @@
 
 from sqlalchemy import Column, Integer, ForeignKey, Text, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
+
 from app.db.connection import Base
+from app.core.settings_instance import settings
 
 class Respuesta(Base):
     """
@@ -13,7 +15,8 @@ class Respuesta(Base):
     `orden` que indica su posición entre las opciones.
 
     Restricciones:
-        - `UNIQUE(id_pregunta, orden)`: garantiza que no se repita el mismo orden en respuestas de la misma pregunta.
+        - `UNIQUE(id_pregunta, orden)`: garantiza que no se repita 
+            el mismo orden en respuestas de la misma pregunta.
         - `CHECK(orden > 0)`: asegura que el orden sea positivo.
 
     Atributos:
@@ -34,11 +37,18 @@ class Respuesta(Base):
     __table_args__ = (
         UniqueConstraint("id_pregunta", "orden"),
         CheckConstraint("orden > 0"),
-        {"schema": "trivia"}
+        {"schema": settings.postgres_db_schema}
     )
 
     id_respuesta = Column(Integer, primary_key=True, index=True)
-    id_pregunta = Column(Integer, ForeignKey("trivia.preguntas.id_pregunta", ondelete="CASCADE"), nullable=False)
+    id_pregunta = Column(
+        Integer,
+        ForeignKey(
+            f"{settings.postgres_db_schema}.preguntas.id_pregunta",
+            ondelete="CASCADE"
+        ),
+        nullable=False
+    )
     orden = Column(Integer, nullable=False)
     respuesta = Column(Text, nullable=False)
 

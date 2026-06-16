@@ -11,14 +11,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
-from app.db.connection import Base
 
-TRIVIA_SCHEMA = "trivia"
+from app.db.connection import Base
+from app.core.settings_instance import settings
 
 class EstadoParticipacion(str, enum.Enum):
     """Enum para el estado de una participación."""
-    pendiente = "pendiente"
-    finalizado = "finalizado"
+    PENDIENTE = "pendiente"
+    FINALIZADO = "finalizado"
 
 class Participacion(Base):
     """
@@ -42,26 +42,26 @@ class Participacion(Base):
     __tablename__ = "participaciones"
     __table_args__ = (
         UniqueConstraint("id_usuario", "id_grupo", "numero_intento", name="uq_usuario_grupo_intento"),
-        {"schema": TRIVIA_SCHEMA}
+        {"schema": settings.postgres_db_schema}
     )
 
     id_participacion = Column(Integer, primary_key=True, index=True)
     id_usuario = Column(
         Integer,
-        ForeignKey("trivia.usuarios.id_usuario", ondelete="CASCADE"),
+        ForeignKey(f"{settings.postgres_db_schema}.usuarios.id_usuario", ondelete="CASCADE"),
         nullable=False
     )
     id_grupo = Column(
         Integer,
-        ForeignKey("trivia.grupos.id_grupo", ondelete="CASCADE"),
+        ForeignKey(f"{settings.postgres_db_schema}.grupos.id_grupo", ondelete="CASCADE"),
         nullable=False
     )
     numero_intento = Column(SmallInteger, nullable=False, default=1)
     respuestas_usuario = Column(JSONB, nullable=False)
     estado = Column(
-        PgEnum(EstadoParticipacion, name="estado_participacion", schema=TRIVIA_SCHEMA),
+        PgEnum(EstadoParticipacion, name="estado_participacion", schema= settings.postgres_db_schema),
         nullable=False,
-        default=EstadoParticipacion.pendiente
+        default=EstadoParticipacion.PENDIENTE
     )
     started_at = Column(TIMESTAMP(timezone=True), nullable=False)
     finished_at = Column(TIMESTAMP(timezone=True), nullable=True)
