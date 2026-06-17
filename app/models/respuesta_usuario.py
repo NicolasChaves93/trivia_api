@@ -48,6 +48,7 @@ class RespuestaUsuario(Base):
         Integer,
         ForeignKey(f"{settings.postgres_db_schema}.preguntas.id_pregunta", ondelete="CASCADE"),
         nullable=False,
+        index=True,  # agregaciones/joins por pregunta (informe por sección/pregunta)
         doc="ID de la pregunta que fue respondida"
     )
 

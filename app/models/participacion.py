@@ -54,7 +54,8 @@ class Participacion(Base):
     id_grupo = Column(
         Integer,
         ForeignKey(f"{settings.postgres_db_schema}.grupos.id_grupo", ondelete="CASCADE"),
-        nullable=False
+        nullable=False,
+        index=True  # joins/filtros por grupo (informe, ranking, listados)
     )
     numero_intento = Column(SmallInteger, nullable=False, default=1)
     respuestas_usuario = Column(JSONB, nullable=False)
@@ -62,7 +63,8 @@ class Participacion(Base):
     estado = Column(
         PgEnum(EstadoParticipacion, name="estado_participacion", schema= settings.postgres_db_schema),
         nullable=False,
-        default=EstadoParticipacion.PENDIENTE
+        default=EstadoParticipacion.PENDIENTE,
+        index=True  # filtros por estado (pendientes/finalizados)
     )
     started_at = Column(TIMESTAMP(timezone=True), nullable=False)
     finished_at = Column(TIMESTAMP(timezone=True), nullable=True)
