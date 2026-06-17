@@ -7,9 +7,6 @@ from app.core.settings_instance import settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/loginU")  # importante para Swagger
 
-# Rol requerido para operaciones de administración. El token lo emite la API de
-# autenticación (servicio aparte); esta API solo valida el JWT y el rol.
-ADMIN_ROLE = "admin"
 
 def crear_token(data: dict) -> str:
     to_encode = data.copy()
@@ -29,18 +26,35 @@ def verificar_token(token: str = Depends(oauth2_scheme)) -> dict:
         ) from exc
 
 
-def require_admin(payload: dict = Depends(verificar_token)) -> dict:
-    """Exige un JWT válido con rol de administración.
+ADMIN_ROLES = {"admin", "superadmin"}
 
-    El token lo emite la API de autenticación (servicio independiente) y se firma
-    con el `SECRET_KEY` compartido. Aquí solo se valida la firma (vía
-    `verificar_token`) y que el claim de rol sea de administrador.
 
-    Soporta tanto un claim `rol`/`role` simple como una lista `roles`.
+def require_admin(token: str = Depends(oauth2_scheme)) -> dict:
+    """Exige un access token de administración emitido por auth_api (RS256).
+
+    Se valida la firma con la clave PÚBLICA de auth_api (esta API no emite estos
+    tokens, solo los valida) y que el claim de rol sea admin/superadmin.
+    Es independiente de `verificar_token`, que valida tokens de participante (HS256).
     """
-    rol = payload.get("rol") or payload.get("role")
-    roles = payload.get("roles") or ([rol] if rol else [])
-    if ADMIN_ROLE not in roles:
+    pem = settings.admin_public_key_pem
+    if not pem:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Validación de administración no configurada (falta clave pública)",
+        )
+    try:
+        payload = jwt.decode(token, pem, algorithms=[settings.admin_jwt_algorithm])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de administración inválido o expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    if payload.get("type") not in (None, "access"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Se requiere un access token"
+        )
+    if payload.get("rol") not in ADMIN_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requiere privilegios de administrador",

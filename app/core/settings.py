@@ -46,6 +46,23 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS",
     )
 
+    # Validación de tokens de ADMINISTRACIÓN emitidos por auth_api (RS256).
+    # Solo se necesita la clave PÚBLICA (por env o archivo). Los tokens de
+    # participante siguen validándose con secret_key (HS256), aparte.
+    admin_jwt_algorithm: str = Field(default="RS256", alias="ADMIN_JWT_ALGORITHM")
+    jwt_public_key: str = Field(default="", alias="JWT_PUBLIC_KEY")
+    jwt_public_key_path: str = Field(default="", alias="JWT_PUBLIC_KEY_PATH")
+
+    @property
+    def admin_public_key_pem(self) -> str:
+        """Clave pública (PEM) para validar tokens admin; '' si no está configurada."""
+        from pathlib import Path
+        if self.jwt_public_key:
+            return self.jwt_public_key.replace("\\n", "\n")
+        if self.jwt_public_key_path:
+            return Path(self.jwt_public_key_path).read_text(encoding="utf-8")
+        return ""
+
     @property
     def origins_list(self) -> list[str]:
         """Lista de orígenes CORS a partir de la cadena separada por comas."""
