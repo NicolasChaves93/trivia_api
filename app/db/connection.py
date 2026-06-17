@@ -15,7 +15,7 @@ engine = create_async_engine(
     DATABASE_URL,
     echo=False,                              # True solo en desarrollo
     future=True,                             # API moderna
-    pool_pre_ping=True,                      # Verifica conexiones
+    pool_pre_ping=settings.db_pool_pre_ping, # Verifica conexiones (cuesta 1 RTT)
     pool_size=settings.db_pool_size,         # Pool base por worker
     max_overflow=settings.db_max_overflow,   # Extra en carga pico
     pool_timeout=settings.db_pool_timeout,   # Falla rápido si no hay conexión libre

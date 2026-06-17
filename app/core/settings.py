@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     db_pool_size: int = Field(default=10, alias="DB_POOL_SIZE")
     db_max_overflow: int = Field(default=5, alias="DB_MAX_OVERFLOW")
     db_pool_timeout: int = Field(default=30, alias="DB_POOL_TIMEOUT")
+    # pre_ping añade un round-trip (SELECT 1) por checkout: útil contra conexiones
+    # zombi, pero costoso si la BD está en otra región. Desactivable por env.
+    db_pool_pre_ping: bool = Field(default=True, alias="DB_POOL_PRE_PING")
+    # Umbral (ms) para marcar una petición como lenta en los logs.
+    slow_request_ms: int = Field(default=500, alias="SLOW_REQUEST_MS")
 
     # Caché de preguntas (segundos). Las preguntas cambian poco y todos los
     # usuarios las consultan al jugar; cachearlas alivia la BD en concurrencia.

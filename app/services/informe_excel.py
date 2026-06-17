@@ -21,6 +21,7 @@ from typing import Optional
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from sqlalchemy import select
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.participacion import Participacion, EstadoParticipacion
@@ -108,31 +109,31 @@ async def generar_informe_excel(
     ids_part = [f[0].id_participacion for f in filas]
 
     # --- Detalle de respuestas (opción única + opinión) ---
+    # Una sola query: los textos de la opción elegida y de la correcta se traen con
+    # LEFT JOIN a 'respuestas' (alias), evitando una consulta extra (menos round-trips).
     detalle = []
     if ids_part:
+        r_sel = aliased(Respuesta)
+        r_corr = aliased(Respuesta)
         det_stmt = (
             select(
                 Grupo.nombre_grupo, Seccion.nombre_seccion, Usuario.cedula, Usuario.nombre,
                 Participacion.numero_intento, Pregunta.id_pregunta, Pregunta.pregunta,
                 Pregunta.tipo_pregunta, Pregunta.opcion_correcta, RespuestaUsuario.orden_seleccionado,
+                r_sel.respuesta, r_corr.respuesta,
             )
             .join(Participacion, Participacion.id_participacion == RespuestaUsuario.id_participacion)
             .join(Pregunta, Pregunta.id_pregunta == RespuestaUsuario.id_pregunta)
             .join(Seccion, Seccion.id_seccion == Pregunta.id_seccion)
             .join(Usuario, Usuario.id_usuario == Participacion.id_usuario)
             .join(Grupo, Grupo.id_grupo == Participacion.id_grupo)
+            .outerjoin(r_sel, (r_sel.id_pregunta == Pregunta.id_pregunta)
+                       & (r_sel.orden == RespuestaUsuario.orden_seleccionado))
+            .outerjoin(r_corr, (r_corr.id_pregunta == Pregunta.id_pregunta)
+                       & (r_corr.orden == Pregunta.opcion_correcta))
             .where(RespuestaUsuario.id_participacion.in_(ids_part))
         )
         detalle = (await db.execute(det_stmt)).all()
-
-        # Mapa (id_pregunta, orden) -> texto de respuesta
-        ids_preg = {d[5] for d in detalle}
-        textos = {}
-        if ids_preg:
-            for r in (await db.execute(
-                select(Respuesta).where(Respuesta.id_pregunta.in_(ids_preg))
-            )).scalars():
-                textos[(r.id_pregunta, r.orden)] = r.respuesta
 
     wb = Workbook()
 
@@ -168,18 +169,18 @@ async def generar_informe_excel(
     di.append(["Grupo", "Sección", "Cédula", "Nombre", "Intento", "Pregunta",
                "Enunciado", "Tipo", "Selección", "Respuesta Usuario",
                "Opción Correcta", "Respuesta Correcta", "Resultado"])
-    for (grupo_n, secc, ced, nom, intento, idp, enun, tipo, correcta, sel) in detalle:
-        texto_sel = textos.get((idp, sel), "")
+    for (grupo_n, secc, ced, nom, intento, idp, enun, tipo, correcta, sel,
+         texto_sel, texto_corr) in detalle:
         if tipo == "opcion_unica":
-            texto_corr = textos.get((idp, correcta), "")
             resultado = "Correcta" if sel == correcta else "Incorrecta"
             corr_val = correcta
+            corr_txt = texto_corr or ""
         else:  # opcion_opinion (no puntúa)
-            texto_corr = ""
             resultado = "Opinión"
             corr_val = ""
+            corr_txt = ""
         di.append([grupo_n, secc, ced, nom, intento, idp, enun, tipo,
-                   sel, texto_sel, corr_val, texto_corr, resultado])
+                   sel, texto_sel or "", corr_val, corr_txt, resultado])
     _estilo_encabezado(di)
 
     # ===== Hoja 3: Grafica Respuesta (pivote por sección/pregunta) =====
@@ -187,7 +188,7 @@ async def generar_informe_excel(
     gr.append(["Sección", "Pregunta", "Enunciado", "Correcta", "Incorrecta", "Total"])
     agg: dict = {}
     orden_preg = []
-    for (_g, secc, _c, _n, _i, idp, enun, tipo, correcta, sel) in detalle:
+    for (_g, secc, _c, _n, _i, idp, enun, tipo, correcta, sel, _ts, _tc) in detalle:
         if tipo != "opcion_unica":
             continue  # solo puntúan opción única
         k = (secc, idp, enun)

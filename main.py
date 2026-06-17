@@ -10,6 +10,7 @@ Methods:
     lifespan(): Lifecycle handler that runs on startup to initialize database.
 """
 
+import time
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Request
@@ -91,6 +92,25 @@ app.openapi = custom_openapi
 
 # Register API routers
 app.include_router(api_router)
+
+
+@app.middleware("http")
+async def medir_tiempo(request: Request, call_next):
+    """Mide la duración de cada petición y la registra (marca las lentas).
+
+    Expone el tiempo en el header X-Process-Time-ms y registra en WARNING las
+    que superan SLOW_REQUEST_MS, para detectar cuellos de botella en Azure.
+    """
+    inicio = time.perf_counter()
+    response = await call_next(request)
+    ms = (time.perf_counter() - inicio) * 1000
+    response.headers["X-Process-Time-ms"] = f"{ms:.0f}"
+    if ms >= settings.slow_request_ms:
+        logger.warning("LENTA %s %s -> %.0f ms (status %s)",
+                       request.method, request.url.path, ms, response.status_code)
+    else:
+        logger.info("%s %s -> %.0f ms", request.method, request.url.path, ms)
+    return response
 
 
 @app.exception_handler(Exception)
