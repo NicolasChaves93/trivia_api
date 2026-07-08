@@ -28,7 +28,7 @@ PREGUNTA_NO_ENCONTRADA = "Pregunta no encontrada"
 
 router = APIRouter(prefix="/preguntas", tags=["Preguntas"])
 
-@router.get("/", response_model=List[PreguntaOut])
+@router.get("", response_model=List[PreguntaOut])
 async def listar_preguntas(db: AsyncSession = Depends(get_db)):
     """
     Retorna una lista de todas las preguntas registradas.
@@ -133,7 +133,7 @@ async def obtener_pregunta(pregunta_id: int, db: AsyncSession = Depends(get_db))
         )
     return pregunta
 
-@router.post("/", response_model=PreguntaOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PreguntaOut, status_code=status.HTTP_201_CREATED)
 async def crear_pregunta(pregunta: PreguntaCreate, db: AsyncSession = Depends(get_db)):
     """
     Crea una nueva pregunta en una sección con sus respuestas.

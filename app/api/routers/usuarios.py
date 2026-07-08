@@ -19,7 +19,7 @@ from app.schemas.usuario import UsuarioCreate, UsuarioOut
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
-@router.get("/", response_model=List[UsuarioOut])
+@router.get("", response_model=List[UsuarioOut])
 async def listar_usuarios(db: AsyncSession = Depends(get_db)):
     """
     Retorna una lista de todos los usuarios registrados.
@@ -51,7 +51,7 @@ async def obtener_usuario(cedula: str, db: AsyncSession = Depends(get_db)):
         )
     return usuario
 
-@router.post("/", response_model=UsuarioOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UsuarioOut, status_code=status.HTTP_201_CREATED)
 async def crear_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_db)):
     """
     Crea un nuevo usuario.
@@ -92,7 +92,7 @@ async def eliminar_usuario(cedula: str, db: AsyncSession = Depends(get_db)):
             detail="Usuario no encontrado"
         )
 
-@router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 async def eliminar_todos_usuarios(db: AsyncSession = Depends(get_db)):
     """
     Elimina todos los usuarios de la base de datos.

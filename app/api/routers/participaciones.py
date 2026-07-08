@@ -214,7 +214,7 @@ async def buscar_participaciones(
     )
 
 @router.get(
-    "/",
+    "",
     response_model=ListarParticipacionesResponse,
     summary="Listar todas las participaciones"
 )
