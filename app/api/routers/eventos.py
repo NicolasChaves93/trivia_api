@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from app.db.connection import get_db
 from app.crud import crud_eventos
-from app.schemas.evento import EventoRequest, EventoResponse
+from app.schemas.evento import EventoRequest, EventoResponse, EventoUpdate
 
 from app.core.logger import MyLogger
 logger = MyLogger().get_logger()
@@ -34,7 +34,7 @@ Tag: `Eventos` (para agrupar en Swagger)
 
 # Apuntamiento para crear un nuevo evento
 # POST /eventos/
-@router.post("/", status_code=status.HTTP_201_CREATED,
+@router.post("", status_code=status.HTTP_201_CREATED,
              response_model=EventoResponse,
              summary="Crear un nuevo evento"
 )
@@ -63,7 +63,7 @@ async def crear_evento(evento_in: EventoRequest, db: AsyncSession = Depends(get_
 
 # Apuntamiento para listar todos los eventos
 # GET /eventos/
-@router.get("/", response_model=List[EventoResponse], summary="Listar todos los eventos")
+@router.get("", response_model=List[EventoResponse], summary="Listar todos los eventos")
 async def listar_eventos(db: AsyncSession = Depends(get_db)):
     """
     Retorna una lista de todos los eventos registrados en la base de datos.
@@ -94,6 +94,49 @@ async def obtener_evento(evento_id: int, db: AsyncSession = Depends(get_db)):
             detail=EVENTO_NO_ENCONTRADO
         )
     return evento
+
+@router.put("/{evento_id}", response_model=EventoResponse, summary="Actualizar un evento")
+async def actualizar_evento(
+    evento_id: int,
+    evento_in: EventoUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualiza parcialmente un evento existente (nombre_evento y/o tipo_evento).
+
+    Args:
+        evento_id (int): Identificador del evento a actualizar.
+        evento_in (EventoUpdate): Campos a actualizar.
+
+    Raises:
+        HTTPException: 404 si el evento no existe.
+                      400 si el nombre ya está en uso por otro evento.
+    """
+    evento = await crud_eventos.get_by_id(db, evento_id)
+    if not evento:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=EVENTO_NO_ENCONTRADO
+        )
+
+    try:
+        return await crud_eventos.update_evento(db, evento, evento_in)
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=EVENTO_DUPLICADO
+        ) from exc
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        ) from e
+    except Exception as e:
+        logger.exception("Error inesperado al actualizar evento")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al actualizar el evento."
+        ) from e
 
 @router.delete("/{evento_id}", summary="Eliminar un evento", status_code=status.HTTP_204_NO_CONTENT)
 async def eliminar_evento(evento_id: int, db: AsyncSession = Depends(get_db)):

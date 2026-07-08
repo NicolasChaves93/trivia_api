@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 from app.models.evento import Evento, TipoEvento
-from app.schemas.evento import EventoRequest
+from app.schemas.evento import EventoRequest, EventoUpdate
 
 from app.core.logger import MyLogger
 logger = MyLogger().get_logger()
@@ -57,6 +57,33 @@ async def create_evento(db: AsyncSession, evento_in: EventoRequest) -> Evento:
     except IntegrityError as e:
         await db.rollback()
         logger.error("Error de integridad al guardar evento '%s': %s", evento_in.nombre_evento, str(e))
+        raise
+
+async def update_evento(db: AsyncSession, evento: Evento, evento_in: EventoUpdate) -> Evento:
+    """
+    Actualiza parcialmente un evento existente con los campos provistos en evento_in.
+    """
+    datos = evento_in.model_dump(exclude_unset=True)
+
+    if "nombre_evento" in datos and datos["nombre_evento"] != evento.nombre_evento:
+        existente = await get_by_nombre(db, datos["nombre_evento"])
+        if existente:
+            msg_error = f"Ya existe un evento con el nombre: {datos['nombre_evento']}"
+            logger.warning(msg_error)
+            raise ValueError(msg_error)
+
+    for campo, valor in datos.items():
+        setattr(evento, campo, valor)
+
+    try:
+        await db.commit()
+        await db.refresh(evento)
+        logger.info("Evento actualizado: id=%s", evento.id_evento)
+        return evento
+
+    except IntegrityError as e:
+        await db.rollback()
+        logger.error("Error de integridad al actualizar evento id=%s: %s", evento.id_evento, str(e))
         raise
 
 async def delete_evento(db: AsyncSession, evento: Evento):
