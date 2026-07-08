@@ -2,19 +2,20 @@ from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+
+from app.core.settings_instance import settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/loginU")  # importante para Swagger
 
 def crear_token(data: dict) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc)+ timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc)+ timedelta(minutes = settings.jwt_expiration_minutes)
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, settings.secret_key, algorithm = settings.jwt_algorithm)
 
 def verificar_token(token: str = Depends(oauth2_scheme)) -> dict:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
         return payload
     except JWTError as exc:
         raise HTTPException(

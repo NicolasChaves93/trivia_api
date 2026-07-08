@@ -39,7 +39,7 @@ class PreguntaCreate(BaseModel):
     """
     id_seccion: int = Field(..., description="ID de la sección a la que pertenece la pregunta")
     pregunta: str = Field(..., min_length=1, description="Texto de la pregunta")
-    tipo_pregunta: str = Field(..., description="Tipo de pregunta: 'abierta' o 'opcion_unica'")
+    tipo_pregunta: str = Field(..., description="Tipo de pregunta: 'abierta', 'opcion_unica' u 'opcion_opinion'")
     respuestas: Optional[List[RespuestaCreate]] = Field(default=None, description="Lista de 1 a 4 respuestas posibles (solo para opción única)")
     opcion_correcta: Optional[int] = Field(default=None, description="Número de la opción correcta (1-4, solo para opción única)")
 
@@ -54,17 +54,19 @@ class PreguntaCreate(BaseModel):
     @field_validator("tipo_pregunta")
     @classmethod
     def validar_tipo(cls, value: str) -> str:
-        if value not in ("abierta", "opcion_unica"):
-            raise ValueError("El tipo de pregunta debe ser 'abierta' o 'opcion_unica'")
+        if value not in ("abierta", "opcion_unica", "opcion_opinion"):
+            raise ValueError(
+                "El tipo de pregunta debe ser 'abierta', 'opcion_unica' u 'opcion_opinion'"
+            )
         return value
 
     @field_validator("respuestas")
     @classmethod
     def validar_respuestas(cls, respuestas: Optional[List[RespuestaCreate]], info) -> Optional[List[RespuestaCreate]]:
         tipo = info.data.get("tipo_pregunta")
-        if tipo == "opcion_unica":
+        if tipo in ("opcion_unica", "opcion_opinion"):
             if not respuestas or not (1 <= len(respuestas) <= 4):
-                raise ValueError("Debe haber entre 1 y 4 respuestas para preguntas de opción única")
+                raise ValueError("Debe haber entre 1 y 4 respuestas para preguntas con opciones")
             ordenes = [r.orden for r in respuestas]
             if sorted(ordenes) != list(range(1, len(respuestas) + 1)):
                 raise ValueError("Los órdenes de las respuestas deben ser números consecutivos empezando desde 1")
@@ -83,9 +85,11 @@ class PreguntaCreate(BaseModel):
                 raise ValueError("Debes indicar la opción correcta para preguntas de opción única")
             if respuestas and opcion not in [r.orden for r in respuestas]:
                 raise ValueError("La opción correcta debe corresponder al orden de una de las respuestas")
-        elif tipo == "abierta":
+        elif tipo in ("abierta", "opcion_opinion"):
             if opcion is not None:
-                raise ValueError("Las preguntas abiertas no deben tener opción correcta")
+                raise ValueError(
+                    "Las preguntas abiertas o de opinión no deben tener opción correcta"
+                )
         return opcion
 
 class SeccionInfo(BaseModel):

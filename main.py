@@ -11,11 +11,20 @@ Methods:
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+import uvicorn
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 from app.db.init_db import init
 from app.api.routers import api_router
+from app.core.logger import MyLogger
+
+# Configurar el logger al inicio de la aplicación
+logger = MyLogger().get_logger(name="main")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -25,9 +34,11 @@ async def lifespan(_: FastAPI):
     This function runs automatically on app startup and shutdown.
     It's useful for initializing connections, loading configs, etc.
     """
-    await init()  # Initializes database or other services
+    logger.info("Inicializando aplicación...")
+    await init()
+    logger.info("Base de datos inicializada correctamente")
     yield
-    # You can optionally clean up resources here
+    logger.info("Cerrando aplicación...")
 
 # Create FastAPI instance with custom lifespan
 app = FastAPI(
@@ -72,9 +83,32 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request, exc: RequestValidationError):
+    """
+    Traduce los errores de validación de Pydantic (422) a 400, indicando
+    exactamente qué campo falta o sobra para poder mapearlo rápido en el cliente.
+    """
+    errores = [
+        {"campo": ".".join(str(loc) for loc in err["loc"] if loc != "body"), "detalle": err["msg"]}
+        for err in exc.errors()
+    ]
+    logger.warning("Error de validación en request: %s", errores)
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": "Datos inválidos en la solicitud.", "errores": errores},
+    )
+
 # Register API routers
 app.include_router(api_router)
 
+# Azure App Service termina el TLS en su balanceador y reenvía la conexión
+# interna como HTTP plano, agregando X-Forwarded-Proto. Sin este middleware,
+# Starlette no confía en ese header y arma los redirects de trailing-slash
+# como http:// en vez de https://, provocando un downgrade y que el método
+# POST termine convertido en GET tras el redirect forzado de Azure a HTTPS.
+app = ProxyHeadersMiddleware(app, trusted_hosts="*")
+
 if __name__ == "__main__":
-    import uvicorn
+    logger.info("Iniciando servidor...")
     uvicorn.run(app, host='0.0.0.0', port=8000, access_log=True)

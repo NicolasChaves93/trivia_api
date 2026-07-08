@@ -10,8 +10,8 @@ class RankingUsuarioOut(BaseModel):
     respuestas_correctas: int = Field(..., description="Número de respuestas correctas")
 
     class Config:
-        orm_mode = True
-        schema_extra = {
+        from_attributes = True
+        json_schema_extra = {
             "example": {
                 "ranking": 1,
                 "cedula": "1234567890",

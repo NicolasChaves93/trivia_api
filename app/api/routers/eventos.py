@@ -13,9 +13,10 @@ Las respuestas están documentadas automáticamente en Swagger (/docs).
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from app.db.connection import get_db
 from app.crud import crud_eventos
-from app.schemas.evento import EventoCreate, EventoOut
+from app.schemas.evento import EventoRequest, EventoResponse, EventoUpdate
 
 from app.core.logger import MyLogger
 logger = MyLogger().get_logger()
@@ -31,7 +32,38 @@ Prefijo: `/eventos`
 Tag: `Eventos` (para agrupar en Swagger)
 """
 
-@router.get("/", response_model=List[EventoOut], summary="Listar todos los eventos")
+# Apuntamiento para crear un nuevo evento
+# POST /eventos/
+@router.post("", status_code=status.HTTP_201_CREATED,
+             response_model=EventoResponse,
+             summary="Crear un nuevo evento"
+)
+async def crear_evento(evento_in: EventoRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Crea un nuevo evento si no existe previamente.
+    """
+    try:
+        return await crud_eventos.create_evento(db, evento_in)
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ya existe un evento con ese nombre."
+        ) from exc
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        ) from e
+    except Exception as e:
+        logger.exception("Error inesperado al crear evento")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al crear el evento."
+        ) from e
+
+# Apuntamiento para listar todos los eventos
+# GET /eventos/
+@router.get("", response_model=List[EventoResponse], summary="Listar todos los eventos")
 async def listar_eventos(db: AsyncSession = Depends(get_db)):
     """
     Retorna una lista de todos los eventos registrados en la base de datos.
@@ -41,7 +73,7 @@ async def listar_eventos(db: AsyncSession = Depends(get_db)):
     """
     return await crud_eventos.get_eventos(db)
 
-@router.get("/{evento_id}", response_model=EventoOut, summary="Obtener un evento por ID")
+@router.get("/{evento_id}", response_model=EventoResponse, summary="Obtener un evento por ID")
 async def obtener_evento(evento_id: int, db: AsyncSession = Depends(get_db)):
     """
     Retorna la información de un evento específico por su ID.
@@ -63,58 +95,47 @@ async def obtener_evento(evento_id: int, db: AsyncSession = Depends(get_db)):
         )
     return evento
 
-@router.post("/", response_model=EventoOut, status_code=status.HTTP_201_CREATED, summary="Crear un nuevo evento")
-async def crear_evento(
-    evento_in: EventoCreate,
+@router.put("/{evento_id}", response_model=EventoResponse, summary="Actualizar un evento")
+async def actualizar_evento(
+    evento_id: int,
+    evento_in: EventoUpdate,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Crea un nuevo evento si no existe previamente.
-
-    Validaciones:
-    - El nombre del evento no debe repetirse.
-    - El tipo de login debe ser válido (Enum: generico, localidad).
+    Actualiza parcialmente un evento existente (nombre_evento y/o tipo_evento).
 
     Args:
-        evento_in (EventoCreate): Objeto con nombre y tipo_login del evento.
-        db (AsyncSession): Sesión asíncrona de base de datos.
-
-    Returns:
-        EventoOut: El evento recién creado.
+        evento_id (int): Identificador del evento a actualizar.
+        evento_in (EventoUpdate): Campos a actualizar.
 
     Raises:
-        HTTPException: 400 si ya existe un evento con ese nombre.
-                      500 si ocurre un error inesperado.
+        HTTPException: 404 si el evento no existe.
+                      400 si el nombre ya está en uso por otro evento.
     """
-
-    # Validar que no exista un evento con el mismo nombre
-    existente = await crud_eventos.get_by_nombre(db, evento_in.nombre_evento)
-    if existente:
+    evento = await crud_eventos.get_by_id(db, evento_id)
+    if not evento:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=EVENTO_DUPLICADO
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=EVENTO_NO_ENCONTRADO
         )
 
     try:
-        # Crear el evento usando el método del CRUD
-        nuevo_evento = await crud_eventos.create_evento(
-            db,
-            evento_in.nombre_evento,
-            evento_in.tipo_login
-        )
-        return nuevo_evento
-
+        return await crud_eventos.update_evento(db, evento, evento_in)
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=EVENTO_DUPLICADO
+        ) from exc
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Datos inválidos: {str(e)}"
+            detail=str(e)
         ) from e
-
     except Exception as e:
-        logger.error("Error al crear evento: %s", str(e))
+        logger.exception("Error inesperado al actualizar evento")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno al crear el evento."
+            detail="Error interno al actualizar el evento."
         ) from e
 
 @router.delete("/{evento_id}", summary="Eliminar un evento", status_code=status.HTTP_204_NO_CONTENT)

@@ -29,7 +29,7 @@ GRUPO_NOMBRE_DUPLICADO = "Ya existe un grupo con ese nombre en el evento"
 GRUPO_NOMBRE_VACIO = "El nombre del grupo no puede estar vacío"
 FECHA_CIERRE_INVALIDA = "La fecha de cierre debe ser posterior a la fecha de inicio"
 
-@router.get("/", response_model=List[GrupoOut])
+@router.get("", response_model=List[GrupoOut])
 async def listar_grupos(db: AsyncSession = Depends(get_db)):
     """Retorna una lista de todos los grupos registrados."""
     return await crud_grupos.get_grupos(db)
@@ -59,7 +59,7 @@ async def obtener_grupo(grupo_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=GRUPO_NO_ENCONTRADO)
     return grupo
 
-@router.post("/", response_model=GrupoOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=GrupoOut, status_code=status.HTTP_201_CREATED)
 async def crear_grupo(grupo: GrupoCreate, db: AsyncSession = Depends(get_db)):
     """Crea un nuevo grupo en un evento."""
     evento = await crud_eventos.get_by_id(db, grupo.id_evento)

@@ -124,8 +124,8 @@ async def create_pregunta(
     try:
         await db.flush()  # Para obtener el id_pregunta y validar duplicados
 
-        # Crear las respuestas solo si es opción única
-        if tipo_pregunta == "opcion_unica" and respuestas:
+        # Crear las respuestas si la pregunta tiene opciones (única u opinión)
+        if tipo_pregunta in ("opcion_unica", "opcion_opinion") and respuestas:
             for resp in respuestas:
                 respuesta = Respuesta(
                     id_pregunta=nueva_pregunta.id_pregunta,
@@ -169,8 +169,8 @@ respuestas: Optional[List[RespuestaCreate]] = None
         # Determinar tipo de pregunta
         tipo_pregunta = getattr(pregunta_db, "tipo_pregunta", None)
 
-        # Actualizar respuestas solo si es opción única y se proporcionan
-        if tipo_pregunta == "opcion_unica" and respuestas is not None:
+        # Actualizar respuestas si la pregunta tiene opciones (única u opinión)
+        if tipo_pregunta in ("opcion_unica", "opcion_opinion") and respuestas is not None:
             # Eliminar respuestas existentes
             for resp in pregunta_db.respuestas:
                 await db.delete(resp)

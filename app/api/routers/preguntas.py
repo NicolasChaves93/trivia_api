@@ -13,7 +13,7 @@ Las respuestas están documentadas automáticamente en Swagger (/docs).
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -28,14 +28,32 @@ PREGUNTA_NO_ENCONTRADA = "Pregunta no encontrada"
 
 router = APIRouter(prefix="/preguntas", tags=["Preguntas"])
 
-@router.get("/", response_model=List[PreguntaOut])
-async def listar_preguntas(db: AsyncSession = Depends(get_db)):
+@router.get("", response_model=List[PreguntaOut])
+async def listar_preguntas(
+    evento_id: Optional[int] = Query(
+        None, description="ID del evento para filtrar las preguntas"
+    ),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Retorna una lista de todas las preguntas registradas.
+    Retorna una lista de todas las preguntas registradas, opcionalmente
+    filtradas por evento mediante el parámetro `evento_id`.
 
     Returns:
         List[PreguntaOut]: Lista de preguntas disponibles.
+
+    Raises:
+        HTTPException: 404 si se especifica evento_id y el evento no existe.
     """
+    if evento_id is not None:
+        evento = await crud_eventos.get_by_id(db, evento_id)
+        if not evento:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Evento no encontrado"
+            )
+        return await crud_preguntas.get_preguntas_by_evento(db, evento_id)
+
     return await crud_preguntas.get_preguntas(db)
 
 @router.get("/seccion/{seccion_id}", response_model=List[PreguntaOut])
@@ -133,7 +151,7 @@ async def obtener_pregunta(pregunta_id: int, db: AsyncSession = Depends(get_db))
         )
     return pregunta
 
-@router.post("/", response_model=PreguntaOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PreguntaOut, status_code=status.HTTP_201_CREATED)
 async def crear_pregunta(pregunta: PreguntaCreate, db: AsyncSession = Depends(get_db)):
     """
     Crea una nueva pregunta en una sección con sus respuestas.
@@ -239,7 +257,7 @@ async def actualizar_pregunta(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Las preguntas abiertas no deben tener opción correcta"
             )
-    elif tipo_pregunta == "opcion_unica":
+    elif tipo_pregunta in ("opcion_unica", "opcion_opinion"):
         if respuestas is not None:
             ordenes = [r.orden for r in respuestas]
             if sorted(ordenes) != list(range(1, len(respuestas) + 1)):
@@ -247,11 +265,17 @@ async def actualizar_pregunta(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Los órdenes de las respuestas deben ser números consecutivos empezando desde 1"
                 )
-            if opcion_correcta is not None and opcion_correcta not in ordenes:
+            if tipo_pregunta == "opcion_unica" and opcion_correcta is not None \
+                    and opcion_correcta not in ordenes:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="La opción correcta debe corresponder al orden de una de las respuestas"
                 )
+        if tipo_pregunta == "opcion_opinion" and opcion_correcta is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Las preguntas de opinión no deben tener opción correcta"
+            )
 
     # Actualizar la pregunta con sus respuestas en la base de datos
     try:

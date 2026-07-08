@@ -7,10 +7,11 @@ y puede tener múltiples participaciones.
 Al eliminar un usuario, sus participaciones también se eliminan 
 automáticamente gracias al ondelete="CASCADE".
 """
-
 from sqlalchemy import Column, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
+
 from app.db.connection import Base
+from app.core.settings_instance import settings
 
 class Usuario(Base):
     """
@@ -30,7 +31,7 @@ class Usuario(Base):
     __tablename__ = "usuarios"
     __table_args__ = (
         UniqueConstraint("cedula", name="uq_usuario_cedula"),
-        {"schema": "trivia"}
+        {"schema": settings.postgres_db_schema}
     )
 
     id_usuario = Column(

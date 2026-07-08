@@ -1,14 +1,19 @@
 """
-Modelo de datos para registrar las respuestas seleccionadas por un usuario en una participación específica.
+Modelo de datos para registrar las respuestas seleccionadas por un usuario en una 
+participación específica.
 
-Cada respuesta está vinculada a una `participación` concreta, simplificando la integridad referencial y 
-permitiendo respuestas independientes incluso si el usuario participa varias veces en distintos eventos.
+Cada respuesta está vinculada a una `participación` concreta, simplificando la integridad 
+referencial y permitiendo respuestas independientes incluso si el usuario participa varias 
+veces en distintos eventos.
 
-La eliminación en cascada permite que al eliminar una participación, se borren automáticamente sus respuestas.
+La eliminación en cascada permite que al eliminar una participación, se borren 
+automáticamente sus respuestas.
 """
 
 from sqlalchemy import Column, Integer, SmallInteger, ForeignKey, UniqueConstraint
+
 from app.db.connection import Base
+from app.core.settings_instance import settings
 
 class RespuestaUsuario(Base):
     """
@@ -22,7 +27,7 @@ class RespuestaUsuario(Base):
     __tablename__ = "respuestas_usuarios"
     __table_args__ = (
         UniqueConstraint("id_participacion", "id_pregunta", name="uq_participacion_pregunta"),
-        {"schema": "trivia"}
+        {"schema": settings.postgres_db_schema}
     )
 
     id_respuesta_usuario = Column(
@@ -41,7 +46,7 @@ class RespuestaUsuario(Base):
 
     id_pregunta = Column(
         Integer,
-        ForeignKey("trivia.preguntas.id_pregunta", ondelete="CASCADE"),
+        ForeignKey(f"{settings.postgres_db_schema}.preguntas.id_pregunta", ondelete="CASCADE"),
         nullable=False,
         doc="ID de la pregunta que fue respondida"
     )

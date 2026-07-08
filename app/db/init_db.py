@@ -1,5 +1,9 @@
-"""Inicializa las tablas, funciones y triggers para el esquema 'trivia'."""
-import os
+"""Inicializa el esquema y las tablas para el esquema 'trivia'.
+
+La lógica de negocio de las participaciones (gestión de intentos, cooldown y cálculo
+de resultados) vive ahora en la capa de servicios de Python (app/services/participacion.py),
+no en funciones/triggers PL/pgSQL. El arranque solo se ocupa del esquema y las tablas.
+"""
 from sqlalchemy.ext.asyncio import AsyncEngine  # Terceros
 from sqlalchemy import text
 from app.db import get_engine  # Proyecto propio
@@ -7,40 +11,14 @@ from app.models import Base
 
 async def init_models(engine: AsyncEngine):
     """
-    Inicializa los modelos ORM y crea el esquema en la base de datos si no existe.
-
-    Esta función se ejecuta al iniciar la aplicación. Crea el esquema 'trivia' y las tablas
-    asociadas a los modelos declarados. También puede ejecutar scripts SQL adicionales como funciones o triggers.
+    Crea el esquema 'trivia' (si no existe) y todas las tablas declaradas en los modelos ORM.
 
     Args:
         engine (AsyncEngine): Motor asincrónico de SQLAlchemy conectado a la base de datos.
     """
     async with engine.begin() as conn:
-        # Siempre crear esquema y tablas
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS trivia"))
         await conn.run_sync(Base.metadata.create_all)
-
-        # Solo en entorno que no sea producción
-        env = os.getenv("APP_ENV", "dev")
-        if env != "prod":
-            await conn.execute(text("SET search_path = trivia, public"))
-            await run_sql_scripts(conn, [
-                    "app/sql/create_function_gestionar_participacion.sql",
-                    "app/sql/create_function_trg_participacion_finalizada.sql",
-                    "app/sql/drop_trigger_participacion.sql",
-                    "app/sql/create_trigger_participacion.sql"
-                ])
-
-async def run_sql_scripts(conn, script_paths):
-    """
-    Ejecuta scripts SQL individuales, uno por sentencia, para compatibilidad con asyncpg.
-    """
-
-    for path in script_paths:
-        with open(path, "r", encoding="utf-8") as f:
-            sql = f.read().strip()
-            if sql:
-                await conn.execute(text(sql))
 
 async def init():
     """Función externa para lanzar la inicialización de base de datos."""

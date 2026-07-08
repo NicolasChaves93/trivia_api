@@ -1,7 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
-from app.models.evento import Evento, TipoLogin
+from app.models.evento import Evento, TipoEvento
+from app.schemas.evento import EventoRequest, EventoUpdate
 
 from app.core.logger import MyLogger
 logger = MyLogger().get_logger()
@@ -20,45 +21,70 @@ async def get_by_nombre(db: AsyncSession, nombre_evento: str):
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
-async def create_evento(db: AsyncSession, nombre_evento: str, tipo_login: TipoLogin) -> Evento:
+async def create_evento(db: AsyncSession, evento_in: EventoRequest) -> Evento:
     """
-    Crea un nuevo evento en la base de datos.
-
-    Args:
-        db (AsyncSession): Sesión de base de datos.
-        nombre_evento (str): Nombre único del evento.
-        tipo_login (TipoLogin): Enum que indica el tipo de login asociado.
-
-    Returns:
-        Evento: Objeto de evento creado.
-
-    Raises:
-        ValueError: Si el tipo_login es inválido.
-        IntegrityError: Si ocurre un conflicto de integridad al guardar.
+    Crea un nuevo evento si el nombre es único y el tipo es válido.
     """
-    # Validación defensiva por si llega un string en lugar del Enum
-    if isinstance(tipo_login, str):
-        try:
-            tipo_login = TipoLogin(tipo_login)
-        except ValueError as e:
-            logger.warning("Tipo de login inválido: %s", tipo_login)
-            raise ValueError(f"Tipo de login inválido: {tipo_login}") from e
 
-    nuevo_evento = Evento(nombre_evento=nombre_evento, tipo_login=tipo_login)
-    logger.info("Creando evento: %s (tipo_login=%s)", nombre_evento, tipo_login)
+    # Validación del tipo de evento sin mutar el modelo Pydantic
+    try:
+        tipo_evento_validado = TipoEvento(evento_in.tipo_evento)
+    except ValueError as exc:
+        msg_error = f"Tipo de evento inválido: {evento_in.tipo_evento}"
+        logger.warning(msg_error)
+        raise ValueError(msg_error) from exc
 
+    # Verifica duplicado
+    existente = await get_by_nombre(db, evento_in.nombre_evento)
+    if existente:
+        msg_error = f"Ya existe un evento con el nombre: {evento_in.nombre_evento}"
+        logger.warning(msg_error)
+        raise ValueError(msg_error)
+
+    # Crear y guardar el nuevo evento
+    nuevo_evento = Evento(
+        nombre_evento=evento_in.nombre_evento,
+        tipo_evento=tipo_evento_validado
+    )
     db.add(nuevo_evento)
 
     try:
         await db.commit()
         await db.refresh(nuevo_evento)
-        logger.info("Evento creado exitosamente: id=%s", nuevo_evento.id_evento)
+        logger.info("Evento creado: %s", nuevo_evento.nombre_evento)
         return nuevo_evento
 
     except IntegrityError as e:
         await db.rollback()
-        logger.error("Error al crear evento '%s': %s", nombre_evento, str(e), exc_info=True)
-        raise IntegrityError(f"Conflicto al guardar el evento: {nombre_evento}", e.params, e.orig) from e
+        logger.error("Error de integridad al guardar evento '%s': %s", evento_in.nombre_evento, str(e))
+        raise
+
+async def update_evento(db: AsyncSession, evento: Evento, evento_in: EventoUpdate) -> Evento:
+    """
+    Actualiza parcialmente un evento existente con los campos provistos en evento_in.
+    """
+    datos = evento_in.model_dump(exclude_unset=True)
+
+    if "nombre_evento" in datos and datos["nombre_evento"] != evento.nombre_evento:
+        existente = await get_by_nombre(db, datos["nombre_evento"])
+        if existente:
+            msg_error = f"Ya existe un evento con el nombre: {datos['nombre_evento']}"
+            logger.warning(msg_error)
+            raise ValueError(msg_error)
+
+    for campo, valor in datos.items():
+        setattr(evento, campo, valor)
+
+    try:
+        await db.commit()
+        await db.refresh(evento)
+        logger.info("Evento actualizado: id=%s", evento.id_evento)
+        return evento
+
+    except IntegrityError as e:
+        await db.rollback()
+        logger.error("Error de integridad al actualizar evento id=%s: %s", evento.id_evento, str(e))
+        raise
 
 async def delete_evento(db: AsyncSession, evento: Evento):
     """

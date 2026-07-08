@@ -6,7 +6,9 @@ cuando la participación cambia a estado `finalizado` mediante un trigger.
 """
 
 from sqlalchemy import Column, Integer, ForeignKey, Interval, Numeric, UniqueConstraint
+
 from app.db.connection import Base
+from app.core.settings_instance import settings
 
 class Resultado(Base):
     """
@@ -19,7 +21,7 @@ class Resultado(Base):
     __tablename__ = "resultados"
     __table_args__ = (
         UniqueConstraint("id_participacion", name="uq_resultado_participacion"),
-        {"schema": "trivia"}
+        {"schema": settings.postgres_db_schema}
     )
 
     id_resultado = Column(
@@ -31,7 +33,7 @@ class Resultado(Base):
 
     id_participacion = Column(
         Integer,
-        ForeignKey("trivia.participaciones.id_participacion", ondelete="CASCADE"),
+        ForeignKey(f"{settings.postgres_db_schema}.participaciones.id_participacion", ondelete="CASCADE"),
         nullable=False,
         doc="ID de la participación asociada a este resultado"
     )

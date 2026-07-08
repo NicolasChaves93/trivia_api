@@ -24,7 +24,7 @@ SECCION_NO_ENCONTRADA = "Sección no encontrada"
 
 router = APIRouter(prefix="/secciones", tags=["Secciones"])
 
-@router.get("/", response_model=List[SeccionOut])
+@router.get("", response_model=List[SeccionOut])
 async def listar_secciones(db: AsyncSession = Depends(get_db)):
     """
     Retorna una lista de todas las secciones registradas.
@@ -78,7 +78,7 @@ async def obtener_seccion(seccion_id: int, db: AsyncSession = Depends(get_db)):
         )
     return seccion
 
-@router.post("/", response_model=SeccionOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=SeccionOut, status_code=status.HTTP_201_CREATED)
 async def crear_seccion(seccion: SeccionCreate, db: AsyncSession = Depends(get_db)):
     """
     Crea una nueva sección en un evento.
