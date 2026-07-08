@@ -130,6 +130,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         case_sensitive=True,
-        env_file=".env",
+        # Si APP_PROFILE=prod, carga .env.prod; si no, carga .env
+        env_file=(".env", f".env.{os.getenv('APP_PROFILE')}") if os.getenv("APP_PROFILE") else ".env",
         extra="forbid"
     )

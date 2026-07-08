@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: trivia_api
+    ports:
+      - "8000:8000"
+    # Cargamos las variables desde un archivo externo.
+    # Por defecto busca '.env', pero puedes cambiarlo al volar con:
+    # ENV_FILE=.env.prod docker-compose up
+    env_file:
+      - ${ENV_FILE:-.env}
+    environment:
+      - APP_PROFILE=${APP_PROFILE:-} # Pasa el perfil a la app Python
+    networks:
+      - shared_infra_network
+
+networks:
+  shared_infra_network:
+    external: true
+    name: database_share_network
